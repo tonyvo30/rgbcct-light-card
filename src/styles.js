@@ -1,3 +1,6 @@
+import { wheelWhiteGradient } from "./color.js";
+
+
 export function addStyles(card) {
 
   const style = document.createElement("style");
@@ -51,8 +54,54 @@ export function addStyles(card) {
       color: var(--secondary-text-color);
     }
 
+    /* WLED-style gradient tracks. The per-slider gradient is set
+       from JS (updateReadouts) so brightness/value reflect the live
+       colour; this is just the shape + thumb. */
     rgbcct-light-card .row input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
       width: 100%;
+      height: 14px;
+      border-radius: 7px;
+      background: var(--divider-color, #444);
+      outline: none;
+      margin: 0;
+      cursor: pointer;
+    }
+
+    rgbcct-light-card .row input[type="range"]::-webkit-slider-runnable-track {
+      height: 14px;
+      border-radius: 7px;
+      background: transparent;
+    }
+
+    rgbcct-light-card .row input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      margin-top: -3px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #fff;
+      border: 2px solid rgba(0, 0, 0, 0.25);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+      cursor: pointer;
+    }
+
+    rgbcct-light-card .row input[type="range"]::-moz-range-track {
+      height: 14px;
+      border-radius: 7px;
+      background: transparent;
+    }
+
+    rgbcct-light-card .row input[type="range"]::-moz-range-thumb {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #fff;
+      border: 2px solid rgba(0, 0, 0, 0.25);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+      cursor: pointer;
     }
 
     rgbcct-light-card .row .val {
@@ -71,19 +120,15 @@ export function addStyles(card) {
 
     rgbcct-light-card .wheel {
       position: relative;
-      width: 180px;
-      height: 180px;
+      width: 100%;
+      max-width: 280px;
+      aspect-ratio: 1 / 1;
       border-radius: 50%;
       cursor: crosshair;
       touch-action: none;
-      /* Outline via box-shadow, not border: a border sits outside
-         the .wheel-shade (inset: 0) so value dimming wouldn't cover
-         it, and the conic gradient bleeds through a translucent
-         border colour as a mismatched rainbow ring. */
       box-shadow: 0 0 0 1px var(--divider-color, #ccc);
       background:
-        radial-gradient(circle at center,
-          #fff 0%, rgba(255, 255, 255, 0) 100%),
+        ${wheelWhiteGradient()},
         conic-gradient(
           hsl(0, 100%, 50%),
           hsl(60, 100%, 50%),

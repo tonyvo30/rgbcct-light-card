@@ -2,7 +2,7 @@ import { renderCard } from "./render.js";
 import { setupEvents } from "./events.js";
 import { updateWLED } from "./wled.js";
 import { addStyles } from "./styles.js";
-import { hsvToRgb, rgbToHsv } from "./color.js";
+import { hsvToRgb, rgbToHsv, satToRadius } from "./color.js";
 
 
 class RGBCTLightCard extends HTMLElement {
@@ -167,7 +167,7 @@ class RGBCTLightCard extends HTMLElement {
     if (!wheel || !handle) return;
 
     const maxR = (wheel.clientWidth || 180) / 2;
-    const radius = Math.min(1, this.s) * maxR;
+    const radius = satToRadius(this.s) * maxR;
     const rad = this.h * Math.PI / 180;
 
     handle.style.left = (maxR + radius * Math.sin(rad)) + "px";
@@ -220,6 +220,22 @@ class RGBCTLightCard extends HTMLElement {
     text("#v-val", Math.round(this.v * 255));
     text("#w-val", this.w);
     text("#cct-val", this.cct);
+
+    // WLED-style gradient tracks. Brightness runs black -> the live
+    // colour, Value runs black -> the pure hue, White black -> white,
+    // and CCT warm -> cool.
+    const bg = (el, gradient) => {
+      if (el) el.style.background = gradient;
+    };
+
+    bg(this.brightness,
+      `linear-gradient(90deg, #000, rgb(${this.r}, ${this.g}, ${this.b}))`);
+    bg(this.value,
+      `linear-gradient(90deg, #000, hsl(${this.h}, 100%, 50%))`);
+    bg(this.white,
+      `linear-gradient(90deg, #000, #fff)`);
+    bg(this.cctInput,
+      `linear-gradient(90deg, #ffb46b, #fff, #a9c8ff)`);
 
   }
 
