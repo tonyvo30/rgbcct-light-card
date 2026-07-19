@@ -76,7 +76,11 @@ export function addStyles(card) {
       border-radius: 50%;
       cursor: crosshair;
       touch-action: none;
-      border: 1px solid var(--divider-color, #ccc);
+      /* Outline via box-shadow, not border: a border sits outside
+         the .wheel-shade (inset: 0) so value dimming wouldn't cover
+         it, and the conic gradient bleeds through a translucent
+         border colour as a mismatched rainbow ring. */
+      box-shadow: 0 0 0 1px var(--divider-color, #ccc);
       background:
         radial-gradient(circle at center,
           #fff 0%, rgba(255, 255, 255, 0) 100%),
