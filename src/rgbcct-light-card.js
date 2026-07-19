@@ -2,6 +2,7 @@ import { renderCard } from "./render.js";
 import { setupEvents } from "./events.js";
 import { updateWLED } from "./wled.js";
 import { addStyles } from "./styles.js";
+import { hsvToRgb, rgbToHsv } from "./color.js";
 
 
 class RGBCTLightCard extends HTMLElement {
@@ -17,14 +18,17 @@ class RGBCTLightCard extends HTMLElement {
     this.compact =
       config.compact ?? false;
 
-    // Working colour state (0-255). Populated from the entity
-    // in syncFromState() once hass is available.
+    // The colour wheel works in HSV (hue 0-360, sat/val 0-1); r/g/b
+    // are derived from it and are what actually gets sent to WLED.
+    // bri / w / cct stay as plain 0-255 slider values.
     this.bri = this.bri ?? 255;
-    this.r = this.r ?? 255;
-    this.g = this.g ?? 255;
-    this.b = this.b ?? 255;
+    this.h = this.h ?? 0;
+    this.s = this.s ?? 0;
+    this.v = this.v ?? 1;
     this.w = this.w ?? 0;
     this.cct = this.cct ?? 127;
+
+    this.applyHsv();
 
     this.render();
 
@@ -78,10 +82,13 @@ class RGBCTLightCard extends HTMLElement {
     }
 
     if (Array.isArray(attr.rgbw_color)) {
-      [this.r, this.g, this.b, this.w] = attr.rgbw_color;
+      const [r, g, b, w] = attr.rgbw_color;
+      this.setRgb(r, g, b);
+      this.w = w;
     }
     else if (Array.isArray(attr.rgb_color)) {
-      [this.r, this.g, this.b] = attr.rgb_color;
+      const [r, g, b] = attr.rgb_color;
+      this.setRgb(r, g, b);
     }
 
     if (typeof attr.color_temp_kelvin === "number") {
@@ -109,13 +116,66 @@ class RGBCTLightCard extends HTMLElement {
     };
 
     set(this.brightness, this.bri);
-    set(this.red, this.r);
-    set(this.green, this.g);
-    set(this.blue, this.b);
+    set(this.value, Math.round(this.v * 255));
     set(this.white, this.w);
     set(this.cctInput, this.cct);
 
+    // Skip while the user is dragging the wheel so we don't
+    // fight the handle they're moving.
+    if (!this._wheelActive) {
+      this.updateWheel();
+    }
+
     this.updateReadouts();
+
+  }
+
+
+  // Derive r/g/b (what we send to WLED) from the working HSV state.
+  applyHsv() {
+    [this.r, this.g, this.b] = hsvToRgb(this.h, this.s, this.v);
+  }
+
+
+  // Adopt an external r/g/b (from the entity) into the HSV state.
+  // Hue is only trusted when there's saturation, and saturation only
+  // when there's value, so a dark/greyed light doesn't wipe the
+  // remembered wheel position.
+  setRgb(r, g, b) {
+
+    this.r = r;
+    this.g = g;
+    this.b = b;
+
+    const [h, s, v] = rgbToHsv(r, g, b);
+
+    this.v = v;
+    if (v > 0) this.s = s;
+    if (v > 0 && s > 0) this.h = h;
+
+  }
+
+
+  // Place the wheel handle (angle = hue, distance from centre =
+  // saturation, matching WLED's iro wheel: red at 3 o'clock, hue
+  // increasing counter-clockwise) and dim the whole disc by value.
+  updateWheel() {
+
+    const wheel = this.wheel;
+    const handle = this.wheelHandle;
+
+    if (!wheel || !handle) return;
+
+    const maxR = (wheel.clientWidth || 180) / 2;
+    const radius = Math.min(1, this.s) * maxR;
+    const rad = this.h * Math.PI / 180;
+
+    handle.style.left = (maxR + radius * Math.cos(rad)) + "px";
+    handle.style.top = (maxR - radius * Math.sin(rad)) + "px";
+
+    if (this.wheelShade) {
+      this.wheelShade.style.opacity = (1 - this.v).toFixed(3);
+    }
 
   }
 
@@ -156,9 +216,8 @@ class RGBCTLightCard extends HTMLElement {
     };
 
     text("#bri-val", this.bri);
-    text("#r-val", this.r);
-    text("#g-val", this.g);
-    text("#b-val", this.b);
+    text("#rgb-val", `${this.r}, ${this.g}, ${this.b}`);
+    text("#v-val", Math.round(this.v * 255));
     text("#w-val", this.w);
     text("#cct-val", this.cct);
 
@@ -181,6 +240,12 @@ class RGBCTLightCard extends HTMLElement {
   async updateWLED() {
 
     if (!this._hass) return;
+
+    // Re-derive r/g/b from the wheel's HSV state right before
+    // sending, so the payload handed to the "send wled with cct"
+    // script always carries the current colour — never a stale
+    // r/g/b from a code path that forgot to call applyHsv().
+    this.applyHsv();
 
     await updateWLED(this);
 

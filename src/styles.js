@@ -61,6 +61,62 @@ export function addStyles(card) {
       color: var(--primary-text-color);
     }
 
+    rgbcct-light-card .wheel-block {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 0;
+    }
+
+    rgbcct-light-card .wheel {
+      position: relative;
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      cursor: crosshair;
+      touch-action: none;
+      border: 1px solid var(--divider-color, #ccc);
+      background:
+        radial-gradient(circle at center,
+          #fff 0%, rgba(255, 255, 255, 0) 100%),
+        conic-gradient(
+          hsl(0, 100%, 50%),
+          hsl(60, 100%, 50%),
+          hsl(120, 100%, 50%),
+          hsl(180, 100%, 50%),
+          hsl(240, 100%, 50%),
+          hsl(300, 100%, 50%),
+          hsl(360, 100%, 50%)
+        );
+    }
+
+    rgbcct-light-card .wheel-shade {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: #000;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    rgbcct-light-card .wheel-handle {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 2px solid #fff;
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+
+    rgbcct-light-card .wheel-readout {
+      color: var(--secondary-text-color);
+    }
+
     rgbcct-light-card .compact-card {
       display: flex;
       align-items: center;

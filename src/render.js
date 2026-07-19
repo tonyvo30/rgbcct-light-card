@@ -11,6 +11,21 @@ function sliderRow(label, id, value) {
 }
 
 
+function colorWheel() {
+
+  return `
+    <div class="wheel-block">
+      <div class="wheel" id="wheel">
+        <div class="wheel-shade" id="wheel-shade"></div>
+        <div class="wheel-handle" id="wheel-handle"></div>
+      </div>
+      <span class="val wheel-readout" id="rgb-val"></span>
+    </div>
+  `;
+
+}
+
+
 export function renderCard(card) {
 
   if (card.compact) {
@@ -25,11 +40,12 @@ export function renderCard(card) {
       </ha-card>
     `;
 
-    // No sliders in compact mode.
+    // No controls in compact mode.
     card.brightness = null;
-    card.red = null;
-    card.green = null;
-    card.blue = null;
+    card.wheel = null;
+    card.wheelHandle = null;
+    card.wheelShade = null;
+    card.value = null;
     card.white = null;
     card.cctInput = null;
 
@@ -50,9 +66,8 @@ export function renderCard(card) {
         </div>
         <div class="controls">
           ${sliderRow("Brightness", "bri", card.bri)}
-          ${sliderRow("Red", "r", card.r)}
-          ${sliderRow("Green", "g", card.g)}
-          ${sliderRow("Blue", "b", card.b)}
+          ${colorWheel()}
+          ${sliderRow("Value", "v", Math.round(card.v * 255))}
           ${sliderRow("White", "w", card.w)}
           ${sliderRow("CCT", "cct", card.cct)}
         </div>
@@ -61,9 +76,10 @@ export function renderCard(card) {
   `;
 
   card.brightness = card.querySelector("#bri");
-  card.red = card.querySelector("#r");
-  card.green = card.querySelector("#g");
-  card.blue = card.querySelector("#b");
+  card.wheel = card.querySelector("#wheel");
+  card.wheelHandle = card.querySelector("#wheel-handle");
+  card.wheelShade = card.querySelector("#wheel-shade");
+  card.value = card.querySelector("#v");
   card.white = card.querySelector("#w");
   card.cctInput = card.querySelector("#cct");
 
