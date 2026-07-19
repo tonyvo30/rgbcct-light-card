@@ -43,9 +43,9 @@ export function setupEvents(card) {
 }
 
 
-// The wheel sets hue (angle) and saturation (distance from centre),
-// matching WLED's iro wheel: red at 3 o'clock, hue increasing
-// counter-clockwise. Value is left to the Value slider.
+// The wheel sets hue (angle) and saturation (distance from centre).
+// Orientation matches the CSS disc: red at the top (12 o'clock),
+// hue increasing clockwise. Value is left to the Value slider.
 function setupWheel(card) {
 
   const wheel = card.wheel;
@@ -63,7 +63,8 @@ function setupWheel(card) {
 
     card.s = Math.min(1, Math.sqrt(x * x + y * y) / maxR);
 
-    let hue = Math.atan2(-y, x) * 180 / Math.PI;
+    // Clockwise angle from the top: top = 0deg = hue 0 (red).
+    let hue = Math.atan2(x, -y) * 180 / Math.PI;
     if (hue < 0) hue += 360;
     card.h = hue;
 
