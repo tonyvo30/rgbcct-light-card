@@ -34,21 +34,22 @@ export function hsvToRgb(h, s, v) {
 
 
 // Saturation curve for the wheel. Radius fraction (0 at centre, 1 at
-// the rim) maps to saturation with a small white core, reaching full
-// saturation at SAT_FULL_RADIUS and staying there to the edge — a
-// vivid outer band, like WLED. The pick math, the handle placement,
-// and the CSS gradient are all derived from these so they can't drift.
-export const SAT_FULL_RADIUS = 0.6;
+// the rim) maps to saturation as frac^SAT_GAMMA. Gamma < 1 gives a
+// vivid disc with a small white core, but saturation reaches 1 only
+// at the very edge, so the curve is bijective and the handle can be
+// placed anywhere from centre to rim. Lower gamma = more vivid.
+// The pick math, the handle placement, and the CSS gradient are all
+// derived from these so they can't drift.
+export const SAT_GAMMA = 0.25;
 
 
 export function radiusToSat(frac) {
-  return Math.min(1, Math.sqrt(Math.min(1, frac) / SAT_FULL_RADIUS));
+  return Math.pow(Math.min(1, Math.max(0, frac)), SAT_GAMMA);
 }
 
 
 export function satToRadius(s) {
-  const c = Math.min(1, s);
-  return c * c * SAT_FULL_RADIUS;
+  return Math.pow(Math.min(1, Math.max(0, s)), 1 / SAT_GAMMA);
 }
 
 
