@@ -2,8 +2,6 @@ import { renderCard } from "./render.js";
 import { setupEvents } from "./events.js";
 import { updateWLED } from "./wled.js";
 import { addStyles } from "./styles.js";
-import { getWledInfo } from "./utils.js";
-import { WLED_DEVICES } from "./config.js";
 
 
 class RGBCTLightCard extends HTMLElement {
@@ -14,9 +12,6 @@ class RGBCTLightCard extends HTMLElement {
 
     this.compact =
       config.compact ?? false;
-
-
-    this.wled_devices = WLED_DEVICES;
 
 
     this.render();
@@ -38,16 +33,6 @@ class RGBCTLightCard extends HTMLElement {
   async updateWLED() {
 
     updateWLED(this);
-
-  }
-
-
-  getWledInfo(entity) {
-
-    return getWledInfo(
-      this,
-      entity
-    );
 
   }
 
