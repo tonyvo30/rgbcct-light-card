@@ -157,8 +157,8 @@ class RGBCTLightCard extends HTMLElement {
 
 
   // Place the wheel handle (angle = hue, distance from centre =
-  // saturation, matching WLED's iro wheel: red at 3 o'clock, hue
-  // increasing counter-clockwise) and dim the whole disc by value.
+  // saturation) to match the CSS disc: red at the top, hue
+  // increasing clockwise. Also dim the whole disc by value.
   updateWheel() {
 
     const wheel = this.wheel;
@@ -170,8 +170,8 @@ class RGBCTLightCard extends HTMLElement {
     const radius = Math.min(1, this.s) * maxR;
     const rad = this.h * Math.PI / 180;
 
-    handle.style.left = (maxR + radius * Math.cos(rad)) + "px";
-    handle.style.top = (maxR - radius * Math.sin(rad)) + "px";
+    handle.style.left = (maxR + radius * Math.sin(rad)) + "px";
+    handle.style.top = (maxR - radius * Math.cos(rad)) + "px";
 
     if (this.wheelShade) {
       this.wheelShade.style.opacity = (1 - this.v).toFixed(3);
