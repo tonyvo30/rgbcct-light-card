@@ -10,6 +10,9 @@ export default defineConfig({
       entry:
         "./src/rgbcct-light-card.js",
 
+      name:
+        "RgbcctLightCard",
+
       formats:
         ["iife"],
 
