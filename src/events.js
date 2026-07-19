@@ -1,27 +1,43 @@
 export function setupEvents(card) {
 
- if(card.compact) {
+  if (card.compact) {
 
-   card.querySelector(
-     ".compact-card"
-   ).onclick =
-     () => card.toggleCompact();
+    const el = card.querySelector(".compact-card");
 
-   return;
+    if (el) {
+      el.onclick = () => card.toggleCompact();
+    }
 
- }
+    return;
+
+  }
 
 
- card.brightness.oninput =
- () => {
+  const bind = (input, prop) => {
 
-   card.bri =
-    Number(
-      card.brightness.value
-    );
+    if (!input) return;
 
-   card.send();
+    input.oninput = () => {
+      card[prop] = Number(input.value);
+      card.updateReadouts();
+      card.send();
+    };
 
- };
+  };
+
+
+  bind(card.brightness, "bri");
+  bind(card.red, "r");
+  bind(card.green, "g");
+  bind(card.blue, "b");
+  bind(card.white, "w");
+  bind(card.cctInput, "cct");
+
+
+  const collapse = card.querySelector("#collapse");
+
+  if (collapse) {
+    collapse.onclick = () => card.toggleCompact();
+  }
 
 }
