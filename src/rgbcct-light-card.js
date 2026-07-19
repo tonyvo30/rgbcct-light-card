@@ -2,7 +2,7 @@ import { renderCard } from "./render.js";
 import { setupEvents } from "./events.js";
 import { updateWLED } from "./wled.js";
 import { addStyles } from "./styles.js";
-import { hsvToRgb, rgbToHsv, satToRadius } from "./color.js";
+import { hsvToRgb, rgbToHsv, satToRadius, SAT_FULL_RADIUS } from "./color.js";
 
 
 class RGBCTLightCard extends HTMLElement {
@@ -27,6 +27,10 @@ class RGBCTLightCard extends HTMLElement {
     this.v = this.v ?? 1;
     this.w = this.w ?? 0;
     this.cct = this.cct ?? 127;
+
+    // Handle radius fraction (0-1). Decoupled from saturation so the
+    // handle can sit anywhere in the fully-saturated outer band.
+    this.satR = this.satR ?? satToRadius(this.s);
 
     this.applyHsv();
 
@@ -74,6 +78,11 @@ class RGBCTLightCard extends HTMLElement {
       this._hass?.states?.[this.config.entity];
 
     if (!state) return;
+
+    // While the user is interacting (or just did), the card is the
+    // source of truth. Don't let a background HA state push snap
+    // controls back to the entity's readback (e.g. brightness to 255).
+    if (this._wheelActive || Date.now() < (this._holdUntil || 0)) return;
 
     const attr = state.attributes ?? {};
 
@@ -150,7 +159,21 @@ class RGBCTLightCard extends HTMLElement {
     const [h, s, v] = rgbToHsv(r, g, b);
 
     this.v = v;
-    if (v > 0) this.s = s;
+
+    if (v > 0) {
+      this.s = s;
+
+      // Keep the handle radius consistent. In the fully-saturated
+      // outer band any radius >= SAT_FULL_RADIUS is valid, so keep the
+      // handle where it is if it's already out there; otherwise derive
+      // it from the saturation curve.
+      if (s >= 1) {
+        if (!(this.satR >= SAT_FULL_RADIUS)) this.satR = 1;
+      } else {
+        this.satR = satToRadius(s);
+      }
+    }
+
     if (v > 0 && s > 0) this.h = h;
 
   }
@@ -167,7 +190,8 @@ class RGBCTLightCard extends HTMLElement {
     if (!wheel || !handle) return;
 
     const maxR = (wheel.clientWidth || 180) / 2;
-    const radius = satToRadius(this.s) * maxR;
+    const frac = (typeof this.satR === "number") ? this.satR : satToRadius(this.s);
+    const radius = frac * maxR;
     const rad = this.h * Math.PI / 180;
 
     handle.style.left = (maxR + radius * Math.sin(rad)) + "px";
@@ -242,6 +266,11 @@ class RGBCTLightCard extends HTMLElement {
 
   // Debounced so dragging a slider doesn't spam the service.
   send() {
+
+    // Hold off entity->UI sync briefly so a background HA update
+    // doesn't overwrite what the user is setting. Covers the send
+    // debounce plus the WLED/HA round-trip.
+    this._holdUntil = Date.now() + 2000;
 
     clearTimeout(this._sendTimer);
 

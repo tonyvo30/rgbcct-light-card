@@ -64,7 +64,11 @@ function setupWheel(card) {
     const x = ev.clientX - rect.left - maxR;
     const y = ev.clientY - rect.top - maxR;
 
-    card.s = radiusToSat(Math.sqrt(x * x + y * y) / maxR);
+    // Store the actual click radius so the handle tracks the cursor
+    // even across the fully-saturated outer band (where saturation
+    // alone can't locate it).
+    card.satR = Math.min(1, Math.sqrt(x * x + y * y) / maxR);
+    card.s = radiusToSat(card.satR);
 
     // Clockwise angle from the top: top = 0deg = hue 0 (red).
     let hue = Math.atan2(x, -y) * 180 / Math.PI;
