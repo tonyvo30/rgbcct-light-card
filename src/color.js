@@ -33,6 +33,43 @@ export function hsvToRgb(h, s, v) {
 }
 
 
+// Saturation curve for the wheel. Radius fraction (0 at centre, 1 at
+// the rim) maps to saturation with a small white core, reaching full
+// saturation at SAT_FULL_RADIUS and staying there to the edge — a
+// vivid outer band, like WLED. The pick math, the handle placement,
+// and the CSS gradient are all derived from these so they can't drift.
+export const SAT_FULL_RADIUS = 0.6;
+
+
+export function radiusToSat(frac) {
+  return Math.min(1, Math.sqrt(Math.min(1, frac) / SAT_FULL_RADIUS));
+}
+
+
+export function satToRadius(s) {
+  const c = Math.min(1, s);
+  return c * c * SAT_FULL_RADIUS;
+}
+
+
+// White-overlay radial gradient (painted over the conic hue wheel)
+// whose alpha at each radius is 1 - sat, so the displayed colour
+// matches radiusToSat() exactly.
+export function wheelWhiteGradient() {
+
+  const stops = [];
+
+  for (let i = 0; i <= 20; i++) {
+    const f = i / 20;
+    const alpha = (1 - radiusToSat(f)).toFixed(3);
+    stops.push(`rgba(255, 255, 255, ${alpha}) ${Math.round(f * 100)}%`);
+  }
+
+  return `radial-gradient(circle at center, ${stops.join(", ")})`;
+
+}
+
+
 export function rgbToHsv(r, g, b) {
 
   r /= 255; g /= 255; b /= 255;

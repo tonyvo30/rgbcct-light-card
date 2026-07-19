@@ -1,3 +1,6 @@
+import { radiusToSat } from "./color.js";
+
+
 export function setupEvents(card) {
 
   if (card.compact) {
@@ -61,7 +64,7 @@ function setupWheel(card) {
     const x = ev.clientX - rect.left - maxR;
     const y = ev.clientY - rect.top - maxR;
 
-    card.s = Math.min(1, Math.sqrt(x * x + y * y) / maxR);
+    card.s = radiusToSat(Math.sqrt(x * x + y * y) / maxR);
 
     // Clockwise angle from the top: top = 0deg = hue 0 (red).
     let hue = Math.atan2(x, -y) * 180 / Math.PI;
