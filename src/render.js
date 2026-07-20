@@ -18,6 +18,10 @@ function colorWheel() {
       <div class="wheel" id="wheel">
         <div class="wheel-shade" id="wheel-shade"></div>
         <div class="wheel-handle" id="wheel-handle"></div>
+        <span class="pick" title="Pick colour (RGB / HEX / HSL)">
+          <ha-icon class="pick-icon" icon="mdi:eyedropper-variant"></ha-icon>
+          <input type="color" id="color-input" class="color-input" />
+        </span>
       </div>
       <span class="val wheel-readout" id="rgb-val"></span>
     </div>
@@ -48,6 +52,7 @@ export function renderCard(card) {
     card.value = null;
     card.white = null;
     card.cctInput = null;
+    card.colorInput = null;
 
     return;
 
@@ -82,5 +87,6 @@ export function renderCard(card) {
   card.value = card.querySelector("#v");
   card.white = card.querySelector("#w");
   card.cctInput = card.querySelector("#cct");
+  card.colorInput = card.querySelector("#color-input");
 
 }
