@@ -1,0 +1,56 @@
+alias: send wled with cct
+description: ""
+fields:
+  entity_id:
+    name: Entity
+    description: Light entity to control
+    required: true
+    selector:
+      entity:
+        domain: light
+  bri:
+    name: Brightness
+    required: true
+  r:
+    name: Red
+    required: true
+  g:
+    name: Green
+    required: true
+  b:
+    name: Blue
+    required: true
+  w:
+    name: White
+    required: true
+  cct:
+    name: CCT
+    required: true
+sequence:
+  # IP comes from the WLED integration's device registry
+  # (device configuration_url), so there's no manual entity->ip map to
+  # maintain. Segment is parsed from the "_segment_n" entity suffix;
+  # the bare group entity is segment -1.
+  - variables:
+      base_entity: "{{ entity_id.split('_segment_')[0] | trim if '_segment_' in entity_id else entity_id | trim }}"
+      segment: "{{ entity_id.split('_segment_')[1] | int if '_segment_' in entity_id else -1 }}"
+      ip: "{{ (device_attr(device_id(base_entity), 'configuration_url') or '') | replace('http://', '') | replace('https://', '') | replace('/', '') }}"
+  - action: rest_command.send_cct_wled
+    data:
+      ip: |
+        {{ ip }}
+      segment: |
+        {{ segment }}
+      bri: |
+        {{ bri }}
+      r: |
+        {{ r }}
+      g: |
+        {{ g }}
+      b: |
+        {{ b }}
+      w: |
+        {{ w }}
+      cct: |
+        {{ cct }}
+mode: restart

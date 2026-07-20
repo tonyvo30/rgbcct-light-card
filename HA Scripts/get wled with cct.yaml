@@ -1,0 +1,58 @@
+# Companion to "send wled with cct". Reads WLED's live JSON state for
+# the given light entity and returns it to the card, so the card can
+# reflect the real device state on load (including changes made outside
+# the card). HA makes the HTTP request server-side, so no CORS issues
+# and no IPs live in the card's JavaScript.
+#
+# ── configuration.yaml ───────────────────────────────────────────────
+# rest_command:
+#   get_wled_state:
+#     url: "http://{{ ip }}/json/state"
+#     method: GET
+#     timeout: 5
+#
+# ── the script (Settings ▸ Automations & Scenes ▸ Scripts, YAML) ──────
+# Note the field is `light_entity`, NOT `entity_id`: this script is
+# called directly (with return_response) to get its response, and
+# `entity_id` would be swallowed by Home Assistant's reserved target key.
+
+alias: get wled with cct
+description: "Return WLED's current bri/r/g/b/w/cct for a light entity"
+fields:
+  light_entity:
+    name: Entity
+    description: Light entity to read
+    required: true
+    selector:
+      entity:
+        domain: light
+sequence:
+  # IP comes from the WLED integration's device registry (device
+  # configuration_url) — no manual entity->ip map to maintain. Segment
+  # is parsed from the "_segment_n" entity suffix; group entity is -1.
+  - variables:
+      base_entity: "{{ light_entity.split('_segment_')[0] | trim if '_segment_' in light_entity else light_entity | trim }}"
+      segment: "{{ light_entity.split('_segment_')[1] | int if '_segment_' in light_entity else -1 }}"
+      ip: "{{ (device_attr(device_id(base_entity), 'configuration_url') or '') | replace('http://', '') | replace('https://', '') | replace('/', '') }}"
+  - action: rest_command.get_wled_state
+    data:
+      ip: "{{ ip }}"
+    response_variable: wled
+  - variables:
+      state: "{{ wled.content }}"
+      # segment -1 (whole group) reads segment 0's colour/cct.
+      seg: "{{ state.seg[0 if (segment | int) < 0 else (segment | int)] }}"
+      col: "{{ seg.col[0] }}"
+      result:
+        # Group entity (segment -1) -> master brightness; a segment
+        # entity -> that segment's own brightness.
+        bri: "{{ (state.bri if (segment | int) < 0 else seg.bri) | int(255) }}"
+        r: "{{ col[0] | int(0) }}"
+        g: "{{ col[1] | int(0) }}"
+        b: "{{ col[2] | int(0) }}"
+        w: "{{ (col[3] if (col | length) > 3 else 0) | int(0) }}"
+        cct: "{{ seg.cct | int(127) }}"
+  - stop: "ok"
+    response_variable: result
+mode: parallel
+max: 10
