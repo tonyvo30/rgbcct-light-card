@@ -212,6 +212,23 @@ export function addStyles(card) {
       cursor: pointer;
     }
 
+    rgbcct-light-card .compact-card #name {
+      flex: 1;
+      color: var(--primary-text-color);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    rgbcct-light-card .compact-card #summary {
+      color: var(--secondary-text-color);
+      font-variant-numeric: tabular-nums;
+    }
+
+    rgbcct-light-card .compact-card #toggle {
+      cursor: default;
+    }
+
   `;
 
   card.appendChild(style);
