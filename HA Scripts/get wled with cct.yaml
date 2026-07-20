@@ -44,9 +44,11 @@ sequence:
       seg: "{{ state.seg[0 if (segment | int) < 0 else (segment | int)] }}"
       col: "{{ seg.col[0] }}"
       result:
-        # Group entity (segment -1) -> master brightness; a segment
-        # entity -> that segment's own brightness.
-        bri: "{{ (state.bri if (segment | int) < 0 else seg.bri) | int(255) }}"
+        # Read brightness from the same place `send` writes it: the
+        # segment object's `bri` (send_cct_wled always sets seg.bri,
+        # for the group's seg 0 too), so it round-trips for both the
+        # group and individual segments.
+        bri: "{{ seg.bri | int(255) }}"
         r: "{{ col[0] | int(0) }}"
         g: "{{ col[1] | int(0) }}"
         b: "{{ col[2] | int(0) }}"
