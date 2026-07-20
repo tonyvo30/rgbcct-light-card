@@ -32,11 +32,18 @@ class RGBCTLightCard extends HTMLElement {
     // handle can sit anywhere in the fully-saturated outer band.
     this.satR = this.satR ?? satToRadius(this.s);
 
+    // The HA entity can't faithfully report the multi-channel state we
+    // write raw to WLED, so on load we restore the last state this card
+    // sent. If found, the card owns its state and won't be overwritten
+    // by the (lossy) entity read-back.
+    this.restoreState();
+
     this.applyHsv();
 
     this.render();
 
     if (this._hass) {
+      this.fetchStateOnce();
       this.syncFromState();
     }
 
@@ -48,6 +55,7 @@ class RGBCTLightCard extends HTMLElement {
     this._hass = hass;
 
     if (this.config) {
+      this.fetchStateOnce();
       this.syncFromState();
     }
 
@@ -70,6 +78,115 @@ class RGBCTLightCard extends HTMLElement {
 
   }
 
+  fetchStateOnce() {
+
+    if (this._fetched || !this._hass || !this.config) return;
+
+    this._fetched = true;
+    this.fetchWledState();
+
+  }
+
+
+  // Ask the "get wled with cct" HA script for the device's live state
+  // and adopt it. This is the true source of truth (reflects changes
+  // made outside the card); localStorage/entity are only fallbacks used
+  // until this resolves, or if WLED/the script is unreachable.
+  async fetchWledState() {
+
+    if (!this._hass) return;
+
+    try {
+
+      const res = await this._hass.callWS({
+        type: "call_service",
+        domain: "script",
+        service: "get_wled_with_cct",
+        service_data: { light_entity: this.config.entity },
+        return_response: true
+      });
+
+      const d = res?.response;
+      if (!d) return;
+
+      const n = (val, fallback) => {
+        const x = Number(val);
+        return Number.isFinite(x) ? x : fallback;
+      };
+
+      this.bri = n(d.bri, this.bri);
+      this.w = n(d.w, this.w);
+      this.cct = n(d.cct, this.cct);
+      this.setRgb(n(d.r, this.r), n(d.g, this.g), n(d.b, this.b));
+
+      // Live device state wins over the lossy entity read-back.
+      this._stateIsOwned = true;
+      this.persistState();
+      this.updateUI();
+
+    }
+    catch (e) {
+      // WLED offline or the get script isn't set up — keep whatever
+      // localStorage/the entity gave us.
+    }
+
+  }
+
+
+  // localStorage key for this entity's remembered state.
+  storeKey() {
+    return `rgbcct-light-card:${this.config.entity}`;
+  }
+
+
+  // Restore the last state this card sent (survives page refreshes).
+  restoreState() {
+
+    try {
+      const raw = localStorage.getItem(this.storeKey());
+      if (!raw) return;
+
+      const s = JSON.parse(raw);
+      const num = (v) => typeof v === "number" && isFinite(v);
+
+      if (num(s.h)) this.h = s.h;
+      if (num(s.s)) this.s = s.s;
+      if (num(s.v)) this.v = s.v;
+      if (num(s.satR)) this.satR = s.satR;
+      if (num(s.bri)) this.bri = s.bri;
+      if (num(s.w)) this.w = s.w;
+      if (num(s.cct)) this.cct = s.cct;
+
+      // We have our own state now; the entity read-back must not stomp it.
+      this._stateIsOwned = true;
+    }
+    catch (e) {
+      // localStorage unavailable (private mode etc.) — just skip.
+    }
+
+  }
+
+
+  // Remember the current state so a refresh can restore it.
+  persistState() {
+
+    try {
+      localStorage.setItem(this.storeKey(), JSON.stringify({
+        h: this.h,
+        s: this.s,
+        v: this.v,
+        satR: this.satR,
+        bri: this.bri,
+        w: this.w,
+        cct: this.cct
+      }));
+    }
+    catch (e) {
+      // Ignore write failures.
+    }
+
+  }
+
 
   // Pull current values from the light entity's attributes.
   syncFromState() {
@@ -79,10 +196,11 @@ class RGBCTLightCard extends HTMLElement {
 
     if (!state) return;
 
-    // While the user is interacting (or just did), the card is the
-    // source of truth. Don't let a background HA state push snap
-    // controls back to the entity's readback (e.g. brightness to 255).
-    if (this._wheelActive || Date.now() < (this._holdUntil || 0)) return;
+    // Once the card has its own remembered/edited state it's the source
+    // of truth (the entity read-back is lossy for our raw WLED writes).
+    // Also skip while the user is interacting (or just did), so a
+    // background HA push doesn't snap controls back (e.g. brightness 255).
+    if (this._stateIsOwned || this._wheelActive || Date.now() < (this._holdUntil || 0)) return;
 
     const attr = state.attributes ?? {};
 
@@ -267,10 +385,12 @@ class RGBCTLightCard extends HTMLElement {
   // Debounced so dragging a slider doesn't spam the service.
   send() {
 
-    // Hold off entity->UI sync briefly so a background HA update
-    // doesn't overwrite what the user is setting. Covers the send
-    // debounce plus the WLED/HA round-trip.
+    // The card now owns its state; remember it so a refresh restores it,
+    // and hold off entity->UI sync briefly so a background HA update
+    // doesn't overwrite what the user is setting.
+    this._stateIsOwned = true;
     this._holdUntil = Date.now() + 2000;
+    this.persistState();
 
     clearTimeout(this._sendTimer);
 
