@@ -11,6 +11,17 @@ export function setupEvents(card) {
       el.onclick = () => card.toggleCompact();
     }
 
+    const toggle = card.toggle;
+
+    if (toggle) {
+      // Keep flipping the switch from also expanding the card.
+      toggle.addEventListener("click", (e) => e.stopPropagation());
+      toggle.addEventListener("change", (e) => {
+        e.stopPropagation();
+        card.setPower(toggle.checked);
+      });
+    }
+
     return;
 
   }

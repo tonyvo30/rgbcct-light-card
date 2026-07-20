@@ -40,11 +40,12 @@ export function renderCard(card) {
           <ha-icon id="icon"></ha-icon>
           <span id="name"></span>
           <span id="summary"></span>
+          <ha-switch id="toggle"></ha-switch>
         </div>
       </ha-card>
     `;
 
-    // No controls in compact mode.
+    // No colour controls in compact mode; just the power toggle.
     card.brightness = null;
     card.wheel = null;
     card.wheelHandle = null;
@@ -53,6 +54,7 @@ export function renderCard(card) {
     card.white = null;
     card.cctInput = null;
     card.colorInput = null;
+    card.toggle = card.querySelector("#toggle");
 
     return;
 
@@ -88,5 +90,6 @@ export function renderCard(card) {
   card.white = card.querySelector("#w");
   card.cctInput = card.querySelector("#cct");
   card.colorInput = card.querySelector("#color-input");
+  card.toggle = null;
 
 }

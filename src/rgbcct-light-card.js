@@ -57,6 +57,7 @@ class RGBCTLightCard extends HTMLElement {
     if (this.config) {
       this.fetchStateOnce();
       this.syncFromState();
+      this.syncToggle();
     }
 
   }
@@ -343,6 +344,8 @@ class RGBCTLightCard extends HTMLElement {
           `${Math.round((this.bri / 255) * 100)}%`;
       }
 
+      this.syncToggle();
+
       return;
 
     }
@@ -432,6 +435,38 @@ class RGBCTLightCard extends HTMLElement {
     this.compact = !this.compact;
 
     this.render();
+
+  }
+
+
+  // Turn the light on/off via the standard HA light service (the WLED
+  // integration handles it). On/off is a reliable entity state, so
+  // unlike colour it doesn't go through the send-wled script.
+  setPower(on) {
+
+    if (!this._hass) return;
+
+    this._hass.callService(
+      "light",
+      on ? "turn_on" : "turn_off",
+      { entity_id: this.config.entity }
+    );
+
+  }
+
+
+  // Reflect the entity's live on/off state on the compact toggle.
+  // Read straight from the entity (not gated by _stateIsOwned) because
+  // on/off is accurate there, unlike the lossy colour read-back.
+  syncToggle() {
+
+    const toggle = this.toggle;
+
+    if (!toggle || toggle === document.activeElement) return;
+
+    const state = this._hass?.states?.[this.config.entity];
+
+    toggle.checked = state?.state === "on";
 
   }
 
