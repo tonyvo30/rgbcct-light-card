@@ -1,0 +1,21 @@
+rest_command:
+  send_cct_wled:
+    url: "http://{{ ip }}/json/state"
+    method: POST
+    headers:
+      Content-Type: application/json
+    payload: >
+      {
+        "seg": {
+          "id": {{ segment }},
+          "bri": {{ bri }},
+          "col": [
+            [{{ r }}, {{ g }}, {{ b }}, {{ w }}]
+          ],
+          "cct": {{ cct }}
+        }
+      }
+  get_wled_state:
+    url: "http://{{ ip }}/json/state"
+    method: GET
+    timeout: 5
