@@ -36,6 +36,44 @@ export function addStyles(card) {
       color: var(--secondary-text-color);
     }
 
+    /* Eyedropper button: floats at the wheel's top-right corner. It's an
+       MDI icon with a native <input type="color"> stretched invisibly
+       over it, so a click opens the browser's own colour picker
+       (RGB / HEX / HSL) anchored right at the icon. */
+    rgbcct-light-card .pick {
+      position: absolute;
+      top: 0;
+      right: 0;
+      z-index: 2;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: var(--card-background-color, #1c1c1c);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+      cursor: pointer;
+      color: var(--primary-text-color);
+    }
+
+    rgbcct-light-card .pick-icon {
+      pointer-events: none;
+      --mdc-icon-size: 18px;
+    }
+
+    rgbcct-light-card .color-input {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      border: none;
+      opacity: 0;
+      cursor: pointer;
+    }
+
     rgbcct-light-card .controls {
       display: flex;
       flex-direction: column;

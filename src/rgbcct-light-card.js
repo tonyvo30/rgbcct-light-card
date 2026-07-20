@@ -379,6 +379,16 @@ class RGBCTLightCard extends HTMLElement {
     bg(this.cctInput,
       `linear-gradient(90deg, #ffb46b, #fff, #a9c8ff)`);
 
+    // Keep the native colour picker seeded with the current colour so
+    // it opens on it. Skip while it's focused/open so we don't fight it.
+    if (this.colorInput && this.colorInput !== document.activeElement) {
+      const hex = (v) =>
+        Math.max(0, Math.min(255, Math.round(v)))
+          .toString(16)
+          .padStart(2, "0");
+      this.colorInput.value = `#${hex(this.r)}${hex(this.g)}${hex(this.b)}`;
+    }
+
   }
 
 

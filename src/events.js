@@ -35,6 +35,7 @@ export function setupEvents(card) {
 
   setupWheel(card);
   setupValue(card);
+  setupColorInput(card);
 
 
   const collapse = card.querySelector("#collapse");
@@ -117,6 +118,41 @@ function setupValue(card) {
     card.updateReadouts();
     card.updateWheel();
     card.send();
+  };
+
+}
+
+
+// The native <input type="color"> gives the browser's colour picker
+// (RGB / HEX / HSL). Its value is a #rrggbb hex, which we feed straight
+// into the wheel's HSV state via setRgb().
+function setupColorInput(card) {
+
+  const input = card.colorInput;
+
+  if (!input) return;
+
+  // The button sits inside the wheel, so keep its click from also
+  // registering as a colour pick on the wheel underneath.
+  input.addEventListener("pointerdown", (e) => e.stopPropagation());
+
+  input.oninput = () => {
+
+    const hex = input.value;
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+
+    if ([r, g, b].some(Number.isNaN)) return;
+
+    // setRgb() derives hue/sat/value/handle from the picked colour, so
+    // a dim pick lowers the value. updateUI() (not just updateReadouts)
+    // moves the Value slider thumb too, so it reflects what was picked
+    // instead of appearing stuck at the previous value.
+    card.setRgb(r, g, b);
+    card.updateUI();
+    card.send();
+
   };
 
 }
