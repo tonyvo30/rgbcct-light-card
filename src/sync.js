@@ -7,6 +7,11 @@
 // is lossy for the raw multi-channel writes we make, so it's only a
 // fallback — the /json/state fetch is the source of truth.
 
+import { baseEntity } from './entities.js';
+
+// The HA script this card calls to read WLED's true live state.
+const GET_SCRIPT = 'get_wled_with_cct';
+
 export const syncMixin = {
   fetchStateOnce() {
     if (this._fetched || !this._hass || !this.config) return;
@@ -37,7 +42,7 @@ export const syncMixin = {
       const res = await this._hass.callWS({
         type: 'call_service',
         domain: 'script',
-        service: 'get_wled_with_cct',
+        service: GET_SCRIPT,
         service_data: { light_entity: this.config.entity },
         return_response: true,
       });
@@ -96,10 +101,12 @@ export const syncMixin = {
   // changes are caught by the poll fallback, not this trigger.
   watchedEntities() {
     const e = this.config.entity;
-    const base = e.includes('_segment_') ? e.split('_segment_')[0] : e;
+    const base = baseEntity(e);
 
+    // The group entity and every one of its segments all share this base,
+    // so a single baseEntity() comparison catches the whole device.
     const states = this._hass?.states || {};
-    const ids = Object.keys(states).filter((k) => k === base || k.startsWith(base + '_segment_'));
+    const ids = Object.keys(states).filter((k) => baseEntity(k) === base);
 
     return ids.length ? ids : [e];
   },

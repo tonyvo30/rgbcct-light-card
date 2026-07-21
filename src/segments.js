@@ -4,11 +4,13 @@
 // propagates across every segment). On/off is driven by the live HA
 // entity states — reliable and instant, unlike the lossy colour read-back.
 
+import { isSegmentEntity, baseEntity, segmentEntity } from './entities.js';
+
 export const segmentsMixin = {
-  // A card is a master (whole-device) card when its entity has no
-  // "_segment_" suffix. Optional `master:` config overrides.
+  // A card is a master (whole-device) card when its entity is the group
+  // entity (no "_segment_" suffix). Optional `master:` config overrides.
   isMaster() {
-    return this.config.master ?? !this.config.entity.includes('_segment_');
+    return this.config.master ?? !isSegmentEntity(this.config.entity);
   },
 
   // Are the fetched segments non-homogeneous? True if any segment's
@@ -34,15 +36,15 @@ export const segmentsMixin = {
   // The device's base (group) entity id — this card's entity with any
   // "_segment_n" suffix stripped.
   deviceBase() {
-    const e = this.config.entity;
-    return e.includes('_segment_') ? e.split('_segment_')[0] : e;
+    return baseEntity(this.config.entity);
   },
 
-  // The HA entity ids for this device's segments (light.<base>_segment_n).
+  // The HA entity ids for this device's segments (light.<base>_segment_n) —
+  // the segment entities that share this device's base.
   segmentEntityIds() {
     const base = this.deviceBase();
     const states = this._hass?.states || {};
-    return Object.keys(states).filter((k) => k.startsWith(base + '_segment_'));
+    return Object.keys(states).filter((k) => isSegmentEntity(k) && baseEntity(k) === base);
   },
 
   // Is the device's master power on? Read from the group entity's state,
@@ -60,7 +62,7 @@ export const segmentsMixin = {
     if (s == null) return false;
     if (!this.deviceOn()) return false;
 
-    const ent = this._hass?.states?.[`${this.deviceBase()}_segment_${s.id}`];
+    const ent = this._hass?.states?.[segmentEntity(this.deviceBase(), s.id)];
     if (ent) return ent.state === 'on';
 
     if (s.on === undefined || s.on === null) return true;
