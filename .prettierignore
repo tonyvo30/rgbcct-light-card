@@ -1,0 +1,4 @@
+# Build output and dependencies — never format these.
+dist/
+node_modules/
+package-lock.json

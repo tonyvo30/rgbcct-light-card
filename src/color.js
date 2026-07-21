@@ -6,9 +6,7 @@
 // Brightness slider, so colours coming off the wheel are always full
 // value.
 
-
 export function hsvToRgb(h, s, v) {
-
   h = ((h % 360) + 360) % 360;
 
   const c = v * s;
@@ -43,17 +41,14 @@ export function hsvToRgb(h, s, v) {
 // the best-effort inverse used only when adopting an external colour.
 export const SAT_FULL_RADIUS = 0.6;
 
-
 export function radiusToSat(frac) {
   return Math.min(1, Math.sqrt(Math.min(1, Math.max(0, frac)) / SAT_FULL_RADIUS));
 }
-
 
 export function satToRadius(s) {
   const c = Math.min(1, Math.max(0, s));
   return c * c * SAT_FULL_RADIUS;
 }
-
 
 // The rainbow hue ring used as the wheel's base and, on a master card,
 // as the header swatch when its segments aren't all the same colour —
@@ -70,12 +65,10 @@ export function hueConicGradient() {
   )`;
 }
 
-
 // White-overlay radial gradient (painted over the conic hue wheel)
 // whose alpha at each radius is 1 - sat, so the displayed colour
 // matches radiusToSat() exactly.
 export function wheelWhiteGradient() {
-
   const stops = [];
 
   for (let i = 0; i <= 20; i++) {
@@ -84,10 +77,8 @@ export function wheelWhiteGradient() {
     stops.push(`rgba(255, 255, 255, ${alpha}) ${Math.round(f * 100)}%`);
   }
 
-  return `radial-gradient(circle at center, ${stops.join(", ")})`;
-
+  return `radial-gradient(circle at center, ${stops.join(', ')})`;
 }
-
 
 export function rgbToHsv(r, g, b) {
 
@@ -111,5 +102,4 @@ export function rgbToHsv(r, g, b) {
   const s = max === 0 ? 0 : d / max;
 
   return [h, s, max];
-
 }

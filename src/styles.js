@@ -1,9 +1,7 @@
-import { wheelWhiteGradient, hueConicGradient } from "./color.js";
-
+import { wheelWhiteGradient, hueConicGradient } from './color.js';
 
 export function addStyles(card) {
-
-  const style = document.createElement("style");
+  const style = document.createElement('style');
 
   style.textContent = `
 
@@ -305,5 +303,4 @@ export function addStyles(card) {
   `;
 
   card.appendChild(style);
-
 }
