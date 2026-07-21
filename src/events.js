@@ -44,6 +44,14 @@ export function setupEvents(card) {
   bind(card.white, "w");
   bind(card.cctInput, "cct");
 
+  // Header on/off switch (mirrors the compact view's toggle). The header
+  // itself isn't clickable, so no stopPropagation is needed here.
+  if (card.toggle) {
+    card.toggle.addEventListener("change", () =>
+      card.setPower(card.toggle.checked)
+    );
+  }
+
   setupWheel(card);
   setupValue(card);
   setupColorInput(card);
