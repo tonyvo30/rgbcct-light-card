@@ -2,7 +2,7 @@ import { renderCard } from "./render.js";
 import { setupEvents } from "./events.js";
 import { updateWLED } from "./wled.js";
 import { addStyles } from "./styles.js";
-import { hsvToRgb, rgbToHsv, satToRadius, SAT_FULL_RADIUS } from "./color.js";
+import { hsvToRgb, rgbToHsv, satToRadius, SAT_FULL_RADIUS, hueConicGradient } from "./color.js";
 
 
 class RGBCTLightCard extends HTMLElement {
@@ -492,10 +492,21 @@ class RGBCTLightCard extends HTMLElement {
 
     }
 
+    // The header swatch normally shows the card's colour (seg 0 on a
+    // master). When a master's segments aren't homogeneous, it becomes
+    // a rainbow disc instead — an at-a-glance "these differ" cue, paired
+    // with the "Mixed" chip for anyone who can't read the colour alone.
+    const mixed = this.isMaster() && this.segmentsAreMixed();
+
     const swatch = this.querySelector("#swatch");
     if (swatch) {
-      swatch.style.background = `rgb(${this.r}, ${this.g}, ${this.b})`;
+      swatch.style.background = mixed
+        ? hueConicGradient()
+        : `rgb(${this.r}, ${this.g}, ${this.b})`;
     }
+
+    const badge = this.querySelector("#mixed-badge");
+    if (badge) badge.classList.toggle("show", mixed);
 
     const text = (id, val) => {
       const el = this.querySelector(id);
@@ -543,6 +554,29 @@ class RGBCTLightCard extends HTMLElement {
   // "_segment_" suffix. Optional `master:` config overrides.
   isMaster() {
     return this.config.master ?? !this.config.entity.includes("_segment_");
+  }
+
+
+  // Are the fetched segments non-homogeneous? True if any segment's
+  // colour or brightness differs from segment 0 beyond a small tolerance
+  // (absorbs WLED/rounding jitter). Needs at least two segments to differ.
+  segmentsAreMixed() {
+
+    const segs = this._segments;
+    if (!Array.isArray(segs) || segs.length < 2) return false;
+
+    const TOL = 4;
+    const near = (a, b) => Math.abs((Number(a) || 0) - (Number(b) || 0)) <= TOL;
+
+    const base = segs[0];
+
+    return segs.some((s) =>
+      !near(s.r, base.r) ||
+      !near(s.g, base.g) ||
+      !near(s.b, base.b) ||
+      !near(s.bri, base.bri)
+    );
+
   }
 
 

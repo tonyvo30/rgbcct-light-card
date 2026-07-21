@@ -85,6 +85,7 @@ export function renderCard(card) {
         <div class="header">
           <div id="swatch" class="swatch"></div>
           <span class="title">${title}</span>
+          <span id="mixed-badge" class="mixed-badge" title="Segments differ in colour or brightness">Mixed</span>
           <ha-icon id="collapse" class="collapse" icon="mdi:unfold-less-horizontal"></ha-icon>
         </div>
         <div class="controls">

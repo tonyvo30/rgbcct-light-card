@@ -55,6 +55,22 @@ export function satToRadius(s) {
 }
 
 
+// The rainbow hue ring used as the wheel's base and, on a master card,
+// as the header swatch when its segments aren't all the same colour —
+// an instantly-readable "mixed" cue. Shared so both stay in sync.
+export function hueConicGradient() {
+  return `conic-gradient(
+    hsl(0, 100%, 50%),
+    hsl(60, 100%, 50%),
+    hsl(120, 100%, 50%),
+    hsl(180, 100%, 50%),
+    hsl(240, 100%, 50%),
+    hsl(300, 100%, 50%),
+    hsl(360, 100%, 50%)
+  )`;
+}
+
+
 // White-overlay radial gradient (painted over the conic hue wheel)
 // whose alpha at each radius is 1 - sat, so the displayed colour
 // matches radiusToSat() exactly.
