@@ -68,6 +68,31 @@ class RGBCTLightCard extends HTMLElement {
   }
 
 
+  connectedCallback() {
+
+    // Poll the true /json/state as a fallback. The entity-change trigger
+    // handles CCT/brightness instantly, but colour changes never surface
+    // on the (color_temp-mode) entity, so nothing else would ever pull a
+    // sibling/other-device colour change in. Guarded so it never fights
+    // an active edit, and throttled so it can't stack with triggers.
+    clearInterval(this._pollTimer);
+    this._pollTimer = setInterval(() => {
+      if (!this._hass || !this.config) return;
+      if (this._wheelActive || Date.now() < (this._holdUntil || 0)) return;
+      this.refetchThrottled();
+    }, 3000);
+
+  }
+
+
+  disconnectedCallback() {
+    clearInterval(this._pollTimer);
+    this._pollTimer = null;
+    clearTimeout(this._refetchTimer);
+    this._refetchTimer = null;
+  }
+
+
   render() {
 
     renderCard(this);
@@ -158,11 +183,24 @@ class RGBCTLightCard extends HTMLElement {
 
 
   // Entities whose HA state changes should make this card re-read the
-  // live device state. A plain card watches its own entity; the master
-  // card extends this to also watch its child segment entities (a change
-  // to one segment may not bump the group entity's last_updated).
+  // live device state: the whole WLED device (group entity + every
+  // segment entity), so a change surfaced on any of them triggers a
+  // re-fetch. NOTE: this only catches CCT/brightness — because the
+  // light sits in color_temp mode (we always send cct), HA never
+  // surfaces rgb changes on any of these entities, so pure colour
+  // changes are caught by the poll fallback, not this trigger.
   watchedEntities() {
-    return [this.config.entity];
+
+    const e = this.config.entity;
+    const base = e.includes("_segment_") ? e.split("_segment_")[0] : e;
+
+    const states = this._hass?.states || {};
+    const ids = Object.keys(states).filter(
+      (k) => k === base || k.startsWith(base + "_segment_")
+    );
+
+    return ids.length ? ids : [e];
+
   }
 
 
