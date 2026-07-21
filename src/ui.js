@@ -3,14 +3,12 @@
 // gradient tracks, header swatch, and children. Kept separate from the
 // state logic so the "what to show" lives apart from the "what is true".
 
-import { satToRadius, hueConicGradient } from "./color.js";
+import { satToRadius, hueConicGradient } from './color.js';
 
 export const uiMixin = {
-
   // Push current state into the sliders (skipping any control
   // the user is actively dragging) and refresh the readouts.
   updateUI() {
-
     const set = (el, val) => {
       if (el && el !== document.activeElement) {
         el.value = val;
@@ -29,60 +27,49 @@ export const uiMixin = {
     }
 
     this.updateReadouts();
-
   },
-
 
   // Place the wheel handle (angle = hue, distance from centre =
   // saturation) to match the CSS disc: red at the top, hue
   // increasing clockwise. Also dim the whole disc by value.
   updateWheel() {
-
     const wheel = this.wheel;
     const handle = this.wheelHandle;
 
     if (!wheel || !handle) return;
 
     const maxR = (wheel.clientWidth || 180) / 2;
-    const frac = (typeof this.satR === "number") ? this.satR : satToRadius(this.s);
+    const frac = typeof this.satR === 'number' ? this.satR : satToRadius(this.s);
     const radius = frac * maxR;
-    const rad = this.h * Math.PI / 180;
+    const rad = (this.h * Math.PI) / 180;
 
-    handle.style.left = (maxR + radius * Math.sin(rad)) + "px";
-    handle.style.top = (maxR - radius * Math.cos(rad)) + "px";
+    handle.style.left = maxR + radius * Math.sin(rad) + 'px';
+    handle.style.top = maxR - radius * Math.cos(rad) + 'px';
 
     if (this.wheelShade) {
       this.wheelShade.style.opacity = (1 - this.v).toFixed(3);
     }
-
   },
 
-
   updateReadouts() {
-
     if (this.compact) {
+      const state = this._hass?.states?.[this.config.entity];
 
-      const state =
-        this._hass?.states?.[this.config.entity];
+      const icon = this.querySelector('#icon');
+      const name = this.querySelector('#name');
+      const summary = this.querySelector('#summary');
 
-      const icon = this.querySelector("#icon");
-      const name = this.querySelector("#name");
-      const summary = this.querySelector("#summary");
-
-      if (icon) icon.setAttribute("icon", "mdi:lightbulb");
+      if (icon) icon.setAttribute('icon', 'mdi:lightbulb');
       if (name) {
-        name.textContent =
-          state?.attributes?.friendly_name ?? this.config.entity;
+        name.textContent = state?.attributes?.friendly_name ?? this.config.entity;
       }
       if (summary) {
-        summary.textContent =
-          `${Math.round((this.bri / 255) * 100)}%`;
+        summary.textContent = `${Math.round((this.bri / 255) * 100)}%`;
       }
 
       this.syncToggle();
 
       return;
-
     }
 
     // The header swatch normally shows the card's colour (seg 0 on a
@@ -91,26 +78,24 @@ export const uiMixin = {
     // with the "Mixed" chip for anyone who can't read the colour alone.
     const mixed = this.isMaster() && this.segmentsAreMixed();
 
-    const swatch = this.querySelector("#swatch");
+    const swatch = this.querySelector('#swatch');
     if (swatch) {
-      swatch.style.background = mixed
-        ? hueConicGradient()
-        : `rgb(${this.r}, ${this.g}, ${this.b})`;
+      swatch.style.background = mixed ? hueConicGradient() : `rgb(${this.r}, ${this.g}, ${this.b})`;
     }
 
-    const badge = this.querySelector("#mixed-badge");
-    if (badge) badge.classList.toggle("show", mixed);
+    const badge = this.querySelector('#mixed-badge');
+    if (badge) badge.classList.toggle('show', mixed);
 
     const text = (id, val) => {
       const el = this.querySelector(id);
       if (el) el.textContent = val;
     };
 
-    text("#bri-val", this.bri);
-    text("#rgb-val", `${this.r}, ${this.g}, ${this.b}`);
-    text("#v-val", Math.round(this.v * 255));
-    text("#w-val", this.w);
-    text("#cct-val", this.cct);
+    text('#bri-val', this.bri);
+    text('#rgb-val', `${this.r}, ${this.g}, ${this.b}`);
+    text('#v-val', Math.round(this.v * 255));
+    text('#w-val', this.w);
+    text('#cct-val', this.cct);
 
     // WLED-style gradient tracks. Brightness runs black -> the live
     // colour, Value runs black -> the pure hue, White black -> white,
@@ -119,14 +104,10 @@ export const uiMixin = {
       if (el) el.style.background = gradient;
     };
 
-    bg(this.brightness,
-      `linear-gradient(90deg, #000, rgb(${this.r}, ${this.g}, ${this.b}))`);
-    bg(this.value,
-      `linear-gradient(90deg, #000, hsl(${this.h}, 100%, 50%))`);
-    bg(this.white,
-      `linear-gradient(90deg, #000, #fff)`);
-    bg(this.cctInput,
-      `linear-gradient(90deg, #ffb46b, #fff, #a9c8ff)`);
+    bg(this.brightness, `linear-gradient(90deg, #000, rgb(${this.r}, ${this.g}, ${this.b}))`);
+    bg(this.value, `linear-gradient(90deg, #000, hsl(${this.h}, 100%, 50%))`);
+    bg(this.white, `linear-gradient(90deg, #000, #fff)`);
+    bg(this.cctInput, `linear-gradient(90deg, #ffb46b, #fff, #a9c8ff)`);
 
     // Keep the native colour picker seeded with the current colour so
     // it opens on it. Skip while it's focused/open so we don't fight it.
@@ -134,7 +115,7 @@ export const uiMixin = {
       const hex = (v) =>
         Math.max(0, Math.min(255, Math.round(v)))
           .toString(16)
-          .padStart(2, "0");
+          .padStart(2, '0');
       this.colorInput.value = `#${hex(this.r)}${hex(this.g)}${hex(this.b)}`;
     }
 
@@ -143,7 +124,5 @@ export const uiMixin = {
     // A fresh fetch can change which segments are lit; keep the toggle
     // (master = any segment on) in step with it, not just with hass pushes.
     this.syncToggle();
-
-  }
-
+  },
 };

@@ -1,12 +1,11 @@
-import { renderCard } from "./render.js";
-import { setupEvents } from "./events.js";
-import { updateWLED } from "./wled.js";
-import { addStyles } from "./styles.js";
-import { hsvToRgb, rgbToHsv, satToRadius, SAT_FULL_RADIUS } from "./color.js";
-import { syncMixin } from "./sync.js";
-import { segmentsMixin } from "./segments.js";
-import { uiMixin } from "./ui.js";
-
+import { renderCard } from './render.js';
+import { setupEvents } from './events.js';
+import { updateWLED } from './wled.js';
+import { addStyles } from './styles.js';
+import { hsvToRgb, rgbToHsv, satToRadius, SAT_FULL_RADIUS } from './color.js';
+import { syncMixin } from './sync.js';
+import { segmentsMixin } from './segments.js';
+import { uiMixin } from './ui.js';
 
 // The custom element itself: lifecycle (setConfig / hass / connect), the
 // working colour state (HSV <-> r/g/b), and sending to WLED. The bulkier
@@ -15,17 +14,14 @@ import { uiMixin } from "./ui.js";
 //   - segments.js  master/segment detection, children list, on/off power
 //   - ui.js        the DOM update methods
 class RGBCTLightCard extends HTMLElement {
-
   setConfig(config) {
-
     if (!config.entity) {
-      throw new Error("You must define an entity");
+      throw new Error('You must define an entity');
     }
 
     this.config = config;
 
-    this.compact =
-      config.compact ?? false;
+    this.compact = config.compact ?? false;
 
     // The colour wheel works in HSV (hue 0-360, sat/val 0-1); r/g/b
     // are derived from it and are what actually gets sent to WLED.
@@ -55,12 +51,9 @@ class RGBCTLightCard extends HTMLElement {
       this.fetchStateOnce();
       this.syncFromState();
     }
-
   }
 
-
   set hass(hass) {
-
     this._hass = hass;
 
     if (this.config) {
@@ -73,16 +66,13 @@ class RGBCTLightCard extends HTMLElement {
       this.updateChildren();
       this.syncOnEntityChange();
     }
-
   }
 
   get hass() {
     return this._hass;
   }
 
-
   connectedCallback() {
-
     // Poll the true /json/state as a fallback. The entity-change trigger
     // handles CCT/brightness instantly, but colour changes never surface
     // on the (color_temp-mode) entity, so nothing else would ever pull a
@@ -94,9 +84,7 @@ class RGBCTLightCard extends HTMLElement {
       if (this._wheelActive || Date.now() < (this._holdUntil || 0)) return;
       this.refetchThrottled();
     }, 3000);
-
   }
-
 
   disconnectedCallback() {
     clearInterval(this._pollTimer);
@@ -105,9 +93,7 @@ class RGBCTLightCard extends HTMLElement {
     this._refetchTimer = null;
   }
 
-
   render() {
-
     renderCard(this);
 
     addStyles(this);
@@ -117,22 +103,18 @@ class RGBCTLightCard extends HTMLElement {
     this.updateUI();
 
     this.applyChildrenOpen();
-
   }
-
 
   // Derive r/g/b (what we send to WLED) from the working HSV state.
   applyHsv() {
     [this.r, this.g, this.b] = hsvToRgb(this.h, this.s, this.v);
   }
 
-
   // Adopt an external r/g/b (from the entity) into the HSV state.
   // Hue is only trusted when there's saturation, and saturation only
   // when there's value, so a dark/greyed light doesn't wipe the
   // remembered wheel position.
   setRgb(r, g, b) {
-
     this.r = r;
     this.g = g;
     this.b = b;
@@ -156,13 +138,10 @@ class RGBCTLightCard extends HTMLElement {
     }
 
     if (v > 0 && s > 0) this.h = h;
-
   }
-
 
   // Debounced so dragging a slider doesn't spam the service.
   send() {
-
     // The card now owns its state; remember it so a refresh restores it,
     // and hold off entity->UI sync briefly so a background HA update
     // doesn't overwrite what the user is setting.
@@ -172,16 +151,10 @@ class RGBCTLightCard extends HTMLElement {
 
     clearTimeout(this._sendTimer);
 
-    this._sendTimer = setTimeout(
-      () => this.updateWLED(),
-      100
-    );
-
+    this._sendTimer = setTimeout(() => this.updateWLED(), 100);
   }
 
-
   async updateWLED() {
-
     if (!this._hass) return;
 
     // Re-derive r/g/b from the wheel's HSV state right before
@@ -191,25 +164,18 @@ class RGBCTLightCard extends HTMLElement {
     this.applyHsv();
 
     await updateWLED(this);
-
   }
 
-
   toggleCompact() {
-
     this.compact = !this.compact;
 
     this.render();
-
   }
-
 
   getCardSize() {
     return this.compact ? 1 : 4;
   }
-
 }
-
 
 // Merge the concern-specific method groups onto the prototype. They're
 // plain method objects, so `this` inside them is the card instance — the

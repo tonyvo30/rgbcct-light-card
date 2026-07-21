@@ -5,19 +5,16 @@
 // entity states — reliable and instant, unlike the lossy colour read-back.
 
 export const segmentsMixin = {
-
   // A card is a master (whole-device) card when its entity has no
   // "_segment_" suffix. Optional `master:` config overrides.
   isMaster() {
-    return this.config.master ?? !this.config.entity.includes("_segment_");
+    return this.config.master ?? !this.config.entity.includes('_segment_');
   },
-
 
   // Are the fetched segments non-homogeneous? True if any segment's
   // colour or brightness differs from segment 0 beyond a small tolerance
   // (absorbs WLED/rounding jitter). Needs at least two segments to differ.
   segmentsAreMixed() {
-
     const segs = this._segments;
     if (!Array.isArray(segs) || segs.length < 2) return false;
 
@@ -32,32 +29,27 @@ export const segmentsMixin = {
       !near(s.b, base.b) ||
       !near(s.bri, base.bri)
     );
-
   },
-
 
   // The device's base (group) entity id — this card's entity with any
   // "_segment_n" suffix stripped.
   deviceBase() {
     const e = this.config.entity;
-    return e.includes("_segment_") ? e.split("_segment_")[0] : e;
+    return e.includes('_segment_') ? e.split('_segment_')[0] : e;
   },
-
 
   // The HA entity ids for this device's segments (light.<base>_segment_n).
   segmentEntityIds() {
     const base = this.deviceBase();
     const states = this._hass?.states || {};
-    return Object.keys(states).filter((k) => k.startsWith(base + "_segment_"));
+    return Object.keys(states).filter((k) => k.startsWith(base + '_segment_'));
   },
-
 
   // Is the device's master power on? Read from the group entity's state,
   // which is reliable for on/off (only colour is lossy on the entity).
   deviceOn() {
-    return this._hass?.states?.[this.deviceBase()]?.state === "on";
+    return this._hass?.states?.[this.deviceBase()]?.state === 'on';
   },
-
 
   // Is a given fetched segment lit? On/off is driven by the live HA
   // entity states (reliable + instant), not the lossy colour read-back:
@@ -69,67 +61,60 @@ export const segmentsMixin = {
     if (!this.deviceOn()) return false;
 
     const ent = this._hass?.states?.[`${this.deviceBase()}_segment_${s.id}`];
-    if (ent) return ent.state === "on";
+    if (ent) return ent.state === 'on';
 
     if (s.on === undefined || s.on === null) return true;
     return Number(s.on) > 0;
   },
 
-
   // Render the master's read-only children list (one row per segment:
   // colour swatch + brightness %) from the last fetched seg[] data. An
   // off segment reads as a hollow swatch and "Off" instead of a %.
   updateChildren() {
-
     const list = this.childrenList;
     if (!list) return;
 
     const segs = this._segments || [];
 
-    list.innerHTML = segs.map((s) => {
-      const on = this.segIsOn(s);
-      const r = Number(s.r) || 0;
-      const g = Number(s.g) || 0;
-      const b = Number(s.b) || 0;
-      const pct = Math.round(((Number(s.bri) || 0) / 255) * 100);
-      return `
-        <div class="child${on ? "" : " off"}">
-          <span class="child-swatch" style="background: ${on ? `rgb(${r}, ${g}, ${b})` : "transparent"}"></span>
+    list.innerHTML = segs
+      .map((s) => {
+        const on = this.segIsOn(s);
+        const r = Number(s.r) || 0;
+        const g = Number(s.g) || 0;
+        const b = Number(s.b) || 0;
+        const pct = Math.round(((Number(s.bri) || 0) / 255) * 100);
+        return `
+        <div class="child${on ? '' : ' off'}">
+          <span class="child-swatch" style="background: ${on ? `rgb(${r}, ${g}, ${b})` : 'transparent'}"></span>
           <span class="child-name">Segment ${s.id}</span>
-          <span class="child-bri">${on ? pct + "%" : "Off"}</span>
+          <span class="child-bri">${on ? pct + '%' : 'Off'}</span>
         </div>
       `;
-    }).join("");
+      }).join('');
 
-    const count = this.querySelector("#children-count");
-    if (count) count.textContent = segs.length ? `(${segs.length})` : "";
-
+    const count = this.querySelector('#children-count');
+    if (count) count.textContent = segs.length ? `(${segs.length})` : '';
   },
-
 
   toggleChildren() {
     this._childrenOpen = !this._childrenOpen;
     this.applyChildrenOpen();
   },
 
-
   applyChildrenOpen() {
-
-    const wrap = this.querySelector(".children");
+    const wrap = this.querySelector('.children');
     if (!wrap) return;
 
-    wrap.classList.toggle("open", !!this._childrenOpen);
+    wrap.classList.toggle('open', !!this._childrenOpen);
 
-    const chev = this.querySelector("#children-chevron");
+    const chev = this.querySelector('#children-chevron');
     if (chev) {
       chev.setAttribute(
         "icon",
         this._childrenOpen ? "mdi:chevron-up" : "mdi:chevron-down"
       );
     }
-
   },
-
 
   // Turn the light on/off via the standard HA light service (the WLED
   // integration handles it). On/off is a reliable entity state, so
@@ -141,7 +126,6 @@ export const segmentsMixin = {
   // wouldn't relight a segment whose own on-flag is off — WLED keeps those
   // per-segment flags — which is why the children didn't follow before.
   setPower(on) {
-
     if (!this._hass) return;
 
     let targets;
@@ -169,9 +153,7 @@ export const segmentsMixin = {
     // No optimistic state to stash: on/off is reliable on the HA entities,
     // so the imminent state_changed push (handled in `set hass`) refreshes
     // the toggle + children with the device's true power within a moment.
-
   },
-
 
   // Reflect the live on/off state on the toggle. For a master card the
   // rule is "on if ANY segment is lit": off whenever the device master is
@@ -181,7 +163,6 @@ export const segmentsMixin = {
   // isn't gated by _stateIsOwned and never fights the get-script fetch.
   // Segment/child cards just use their own entity state.
   syncToggle() {
-
     const toggle = this.toggle;
 
     if (!toggle || toggle === document.activeElement) return;
@@ -193,15 +174,13 @@ export const segmentsMixin = {
       }
       const segs = this.segmentEntityIds();
       toggle.checked = segs.length
-        ? segs.some((id) => this._hass.states[id]?.state === "on")
+        ? segs.some((id) => this._hass.states[id]?.state === 'on')
         : true;
       return;
     }
 
     const state = this._hass?.states?.[this.config.entity];
 
-    toggle.checked = state?.state === "on";
-
-  }
-
+    toggle.checked = state?.state === 'on';
+  },
 };

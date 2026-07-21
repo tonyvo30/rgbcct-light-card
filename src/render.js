@@ -1,5 +1,4 @@
 function sliderRow(label, id, value, min = 0) {
-
   return `
     <div class="row">
       <label for="${id}">${label}</label>
@@ -7,12 +6,9 @@ function sliderRow(label, id, value, min = 0) {
       <span class="val" id="${id}-val">${value}</span>
     </div>
   `;
-
 }
 
-
 function childrenSection() {
-
   return `
     <div class="children">
       <div class="children-header" id="children-toggle">
@@ -22,12 +18,9 @@ function childrenSection() {
       <div class="children-list" id="children-list"></div>
     </div>
   `;
-
 }
 
-
 function colorWheel() {
-
   return `
     <div class="wheel-block">
       <div class="wheel" id="wheel">
@@ -41,14 +34,10 @@ function colorWheel() {
       <span class="val wheel-readout" id="rgb-val"></span>
     </div>
   `;
-
 }
 
-
 export function renderCard(card) {
-
   if (card.compact) {
-
     card.innerHTML = `
       <ha-card>
         <div class="compact-card">
@@ -69,15 +58,13 @@ export function renderCard(card) {
     card.white = null;
     card.cctInput = null;
     card.colorInput = null;
-    card.toggle = card.querySelector("#toggle");
+    card.toggle = card.querySelector('#toggle');
     card.childrenList = null;
 
     return;
-
   }
 
-  const title =
-    card.config.name ?? card.config.entity;
+  const title = card.config.name ?? card.config.entity;
 
   card.innerHTML = `
     <ha-card>
@@ -90,26 +77,25 @@ export function renderCard(card) {
           <ha-icon id="collapse" class="collapse" icon="mdi:unfold-less-horizontal"></ha-icon>
         </div>
         <div class="controls">
-          ${sliderRow("Brightness", "bri", card.bri, 1)}
+          ${sliderRow('Brightness', 'bri', card.bri, 1)}
           ${colorWheel()}
-          ${sliderRow("Value", "v", Math.round(card.v * 255))}
-          ${sliderRow("White", "w", card.w)}
-          ${sliderRow("CCT", "cct", card.cct)}
+          ${sliderRow('Value', 'v', Math.round(card.v * 255))}
+          ${sliderRow('White', 'w', card.w)}
+          ${sliderRow('CCT', 'cct', card.cct)}
         </div>
-        ${card.isMaster() ? childrenSection() : ""}
+        ${card.isMaster() ? childrenSection() : ''}
       </div>
     </ha-card>
   `;
 
-  card.brightness = card.querySelector("#bri");
-  card.wheel = card.querySelector("#wheel");
-  card.wheelHandle = card.querySelector("#wheel-handle");
-  card.wheelShade = card.querySelector("#wheel-shade");
-  card.value = card.querySelector("#v");
-  card.white = card.querySelector("#w");
-  card.cctInput = card.querySelector("#cct");
-  card.colorInput = card.querySelector("#color-input");
-  card.toggle = card.querySelector("#toggle");
-  card.childrenList = card.querySelector("#children-list");
-
+  card.brightness = card.querySelector('#bri');
+  card.wheel = card.querySelector('#wheel');
+  card.wheelHandle = card.querySelector('#wheel-handle');
+  card.wheelShade = card.querySelector('#wheel-shade');
+  card.value = card.querySelector('#v');
+  card.white = card.querySelector('#w');
+  card.cctInput = card.querySelector('#cct');
+  card.colorInput = card.querySelector('#color-input');
+  card.toggle = card.querySelector('#toggle');
+  card.childrenList = card.querySelector('#children-list');
 }
