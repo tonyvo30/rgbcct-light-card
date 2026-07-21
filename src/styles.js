@@ -22,7 +22,7 @@ export function addStyles(card) {
       width: 24px;
       height: 24px;
       border-radius: 50%;
-      border: 1px solid var(--divider-color, #ccc);
+      box-shadow: 0 0 0 1px var(--divider-color, #ccc);
     }
 
     rgbcct-light-card .title {
