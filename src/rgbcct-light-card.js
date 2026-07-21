@@ -103,6 +103,8 @@ class RGBCTLightCard extends HTMLElement {
 
     this.updateUI();
 
+    this.applyChildrenOpen();
+
   }
 
   fetchStateOnce() {
@@ -160,6 +162,14 @@ class RGBCTLightCard extends HTMLElement {
       this.w = n(d.w, this.w);
       this.cct = n(d.cct, this.cct);
       this.setRgb(n(d.r, this.r), n(d.g, this.g), n(d.b, this.b));
+
+      // Per-segment list for the master's children view. The script
+      // sends it JSON-encoded; HA may hand it back already parsed.
+      let segs = d.segments;
+      if (typeof segs === "string") {
+        try { segs = JSON.parse(segs); } catch (e) { segs = null; }
+      }
+      if (Array.isArray(segs)) this._segments = segs;
 
       // Live device state wins over the lossy entity read-back.
       this._stateIsOwned = true;
@@ -522,6 +532,68 @@ class RGBCTLightCard extends HTMLElement {
           .toString(16)
           .padStart(2, "0");
       this.colorInput.value = `#${hex(this.r)}${hex(this.g)}${hex(this.b)}`;
+    }
+
+    this.updateChildren();
+
+  }
+
+
+  // A card is a master (whole-device) card when its entity has no
+  // "_segment_" suffix. Optional `master:` config overrides.
+  isMaster() {
+    return this.config.master ?? !this.config.entity.includes("_segment_");
+  }
+
+
+  // Render the master's read-only children list (one row per segment:
+  // colour swatch + brightness %) from the last fetched seg[] data.
+  updateChildren() {
+
+    const list = this.childrenList;
+    if (!list) return;
+
+    const segs = this._segments || [];
+
+    list.innerHTML = segs.map((s) => {
+      const r = Number(s.r) || 0;
+      const g = Number(s.g) || 0;
+      const b = Number(s.b) || 0;
+      const pct = Math.round(((Number(s.bri) || 0) / 255) * 100);
+      return `
+        <div class="child">
+          <span class="child-swatch" style="background: rgb(${r}, ${g}, ${b})"></span>
+          <span class="child-name">Segment ${s.id}</span>
+          <span class="child-bri">${pct}%</span>
+        </div>
+      `;
+    }).join("");
+
+    const count = this.querySelector("#children-count");
+    if (count) count.textContent = segs.length ? `(${segs.length})` : "";
+
+  }
+
+
+  toggleChildren() {
+    this._childrenOpen = !this._childrenOpen;
+    this.applyChildrenOpen();
+  }
+
+
+  applyChildrenOpen() {
+
+    const wrap = this.querySelector(".children");
+    if (!wrap) return;
+
+    wrap.classList.toggle("open", !!this._childrenOpen);
+
+    const chev = this.querySelector("#children-chevron");
+    if (chev) {
+      chev.setAttribute(
+        "icon",
+        this._childrenOpen ? "mdi:chevron-up" : "mdi:chevron-down"
+      );
     }
 
   }

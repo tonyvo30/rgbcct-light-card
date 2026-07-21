@@ -204,6 +204,63 @@ export function addStyles(card) {
       color: var(--secondary-text-color);
     }
 
+    rgbcct-light-card .children {
+      margin-top: 12px;
+      border-top: 1px solid var(--divider-color, #ccc);
+    }
+
+    rgbcct-light-card .children-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 2px 4px;
+      cursor: pointer;
+      color: var(--secondary-text-color);
+      font-size: 0.85em;
+    }
+
+    rgbcct-light-card .children-title {
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    rgbcct-light-card .children-list {
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+      padding: 4px 2px 2px;
+    }
+
+    rgbcct-light-card .children.open .children-list {
+      display: flex;
+    }
+
+    rgbcct-light-card .child {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    rgbcct-light-card .child-swatch {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 1px solid var(--divider-color, #ccc);
+      flex-shrink: 0;
+    }
+
+    rgbcct-light-card .child-name {
+      flex: 1;
+      font-size: 0.9em;
+      color: var(--primary-text-color);
+    }
+
+    rgbcct-light-card .child-bri {
+      font-size: 0.9em;
+      font-variant-numeric: tabular-nums;
+      color: var(--secondary-text-color);
+    }
+
     rgbcct-light-card .compact-card {
       display: flex;
       align-items: center;
