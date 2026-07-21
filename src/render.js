@@ -1,9 +1,9 @@
-function sliderRow(label, id, value) {
+function sliderRow(label, id, value, min = 0) {
 
   return `
     <div class="row">
       <label for="${id}">${label}</label>
-      <input type="range" id="${id}" min="0" max="255" value="${value}" />
+      <input type="range" id="${id}" min="${min}" max="255" value="${value}" />
       <span class="val" id="${id}-val">${value}</span>
     </div>
   `;
@@ -86,10 +86,11 @@ export function renderCard(card) {
           <div id="swatch" class="swatch"></div>
           <span class="title">${title}</span>
           <span id="mixed-badge" class="mixed-badge" title="Segments differ in colour or brightness">Mixed</span>
+          <ha-switch id="toggle"></ha-switch>
           <ha-icon id="collapse" class="collapse" icon="mdi:unfold-less-horizontal"></ha-icon>
         </div>
         <div class="controls">
-          ${sliderRow("Brightness", "bri", card.bri)}
+          ${sliderRow("Brightness", "bri", card.bri, 1)}
           ${colorWheel()}
           ${sliderRow("Value", "v", Math.round(card.v * 255))}
           ${sliderRow("White", "w", card.w)}
@@ -108,7 +109,7 @@ export function renderCard(card) {
   card.white = card.querySelector("#w");
   card.cctInput = card.querySelector("#cct");
   card.colorInput = card.querySelector("#color-input");
-  card.toggle = null;
+  card.toggle = card.querySelector("#toggle");
   card.childrenList = card.querySelector("#children-list");
 
 }
