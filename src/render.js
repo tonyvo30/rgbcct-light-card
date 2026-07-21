@@ -11,6 +11,21 @@ function sliderRow(label, id, value) {
 }
 
 
+function childrenSection() {
+
+  return `
+    <div class="children">
+      <div class="children-header" id="children-toggle">
+        <span class="children-title">Segments <span id="children-count"></span></span>
+        <ha-icon id="children-chevron" icon="mdi:chevron-down"></ha-icon>
+      </div>
+      <div class="children-list" id="children-list"></div>
+    </div>
+  `;
+
+}
+
+
 function colorWheel() {
 
   return `
@@ -55,6 +70,7 @@ export function renderCard(card) {
     card.cctInput = null;
     card.colorInput = null;
     card.toggle = card.querySelector("#toggle");
+    card.childrenList = null;
 
     return;
 
@@ -78,6 +94,7 @@ export function renderCard(card) {
           ${sliderRow("White", "w", card.w)}
           ${sliderRow("CCT", "cct", card.cct)}
         </div>
+        ${card.isMaster() ? childrenSection() : ""}
       </div>
     </ha-card>
   `;
@@ -91,5 +108,6 @@ export function renderCard(card) {
   card.cctInput = card.querySelector("#cct");
   card.colorInput = card.querySelector("#color-input");
   card.toggle = null;
+  card.childrenList = card.querySelector("#children-list");
 
 }

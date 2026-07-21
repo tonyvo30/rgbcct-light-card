@@ -43,6 +43,21 @@ sequence:
       # segment -1 (whole group) reads segment 0's colour/cct.
       seg: "{{ state.seg[0 if (segment | int) < 0 else (segment | int)] }}"
       col: "{{ seg.col[0] }}"
+      # Compact per-segment list (colour + brightness) for the master
+      # card's children view. Built as a native list; to_json is applied
+      # at the result field so the card always gets valid JSON.
+      segments: >-
+        {% set ns = namespace(items=[]) %}
+        {%- for s in state.seg %}
+        {%- set ns.items = ns.items + [{
+              'id': s.id | int(0),
+              'r': s.col[0][0] | int(0),
+              'g': s.col[0][1] | int(0),
+              'b': s.col[0][2] | int(0),
+              'bri': s.bri | int(255)
+            }] %}
+        {%- endfor %}
+        {{ ns.items }}
       result:
         # Read brightness from the same place `send` writes it: the
         # segment object's `bri` (send_cct_wled always sets seg.bri,
@@ -54,6 +69,7 @@ sequence:
         b: "{{ col[2] | int(0) }}"
         w: "{{ (col[3] if (col | length) > 3 else 0) | int(0) }}"
         cct: "{{ seg.cct | int(127) }}"
+        segments: "{{ segments | to_json }}"
   - stop: "ok"
     response_variable: result
 mode: parallel

@@ -55,6 +55,12 @@ export function setupEvents(card) {
     collapse.onclick = () => card.toggleCompact();
   }
 
+  const childrenToggle = card.querySelector("#children-toggle");
+
+  if (childrenToggle) {
+    childrenToggle.onclick = () => card.toggleChildren();
+  }
+
 }
 
 
