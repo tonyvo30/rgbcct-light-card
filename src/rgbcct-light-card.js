@@ -58,6 +58,7 @@ class RGBCTLightCard extends HTMLElement {
       this.fetchStateOnce();
       this.syncFromState();
       this.syncToggle();
+      this.syncOnEntityChange();
     }
 
   }
@@ -97,6 +98,17 @@ class RGBCTLightCard extends HTMLElement {
 
     if (!this._hass) return;
 
+    // Only one fetch in flight; if another is requested meanwhile, run
+    // it once this one finishes (so a change during the request isn't
+    // lost).
+    if (this._fetching) {
+      this._refetchQueued = true;
+      return;
+    }
+
+    this._fetching = true;
+    this._lastFetchAt = Date.now();
+
     try {
 
       const res = await this._hass.callWS({
@@ -109,6 +121,10 @@ class RGBCTLightCard extends HTMLElement {
 
       const d = res?.response;
       if (!d) return;
+
+      // The user may have started interacting while this was in flight;
+      // if so, their input wins — drop the fetched result.
+      if (this._wheelActive || Date.now() < (this._holdUntil || 0)) return;
 
       const n = (val, fallback) => {
         const x = Number(val);
@@ -130,6 +146,84 @@ class RGBCTLightCard extends HTMLElement {
       // WLED offline or the get script isn't set up — keep whatever
       // localStorage/the entity gave us.
     }
+    finally {
+      this._fetching = false;
+      if (this._refetchQueued) {
+        this._refetchQueued = false;
+        this.refetchThrottled();
+      }
+    }
+
+  }
+
+
+  // Entities whose HA state changes should make this card re-read the
+  // live device state. A plain card watches its own entity; the master
+  // card extends this to also watch its child segment entities (a change
+  // to one segment may not bump the group entity's last_updated).
+  watchedEntities() {
+    return [this.config.entity];
+  }
+
+
+  // HA pushes entity updates to every connected frontend, so when the
+  // device changes anywhere (a sibling card, the WLED app, another
+  // dashboard, even another device) the watched entity's last_updated
+  // moves. Use that as a trigger to re-read the true /json/state — the
+  // entity attributes themselves are too lossy to adopt directly.
+  syncOnEntityChange() {
+
+    // The initial load is handled by fetchStateOnce().
+    if (!this._fetched) return;
+
+    this._lastSeen = this._lastSeen || {};
+
+    let changed = false;
+
+    for (const id of this.watchedEntities()) {
+      const lu = this._hass?.states?.[id]?.last_updated;
+      if (!lu) continue;
+
+      // Only a move from a previously-seen value counts (skip the first
+      // sighting so we don't re-fetch immediately after the initial one).
+      if (this._lastSeen[id] !== undefined && lu !== this._lastSeen[id]) {
+        changed = true;
+      }
+      this._lastSeen[id] = lu;
+    }
+
+    if (!changed) return;
+
+    // Don't fight the user: skip while dragging or inside the post-edit
+    // hold window (the client making the change already has the state;
+    // idle clients re-fetch and reflect it).
+    if (this._wheelActive || Date.now() < (this._holdUntil || 0)) return;
+
+    this.refetchThrottled();
+
+  }
+
+
+  // Coalesce bursts of entity updates into at most one /json/state read
+  // per REFETCH_MIN_MS, re-checking the interaction guards at fire time.
+  refetchThrottled() {
+
+    const MIN = 1500;
+    const wait = MIN - (Date.now() - (this._lastFetchAt || 0));
+
+    if (wait <= 0) {
+      this.fetchWledState();
+      return;
+    }
+
+    if (this._refetchTimer) return;
+
+    this._refetchTimer = setTimeout(() => {
+      this._refetchTimer = null;
+      if (!this._wheelActive && Date.now() >= (this._holdUntil || 0)) {
+        this.fetchWledState();
+      }
+    }, wait);
 
   }
 
