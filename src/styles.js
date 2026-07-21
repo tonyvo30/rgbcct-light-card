@@ -1,4 +1,4 @@
-import { wheelWhiteGradient } from "./color.js";
+import { wheelWhiteGradient, hueConicGradient } from "./color.js";
 
 
 export function addStyles(card) {
@@ -29,6 +29,25 @@ export function addStyles(card) {
       flex: 1;
       font-weight: 500;
       color: var(--primary-text-color);
+    }
+
+    /* "Mixed" chip: shown next to the title on a master card whose
+       segments aren't homogeneous (paired with the rainbow swatch). */
+    rgbcct-light-card .mixed-badge {
+      display: none;
+      font-size: 0.7em;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 2px 6px;
+      border-radius: 10px;
+      color: var(--secondary-text-color);
+      border: 1px solid var(--divider-color, #ccc);
+      white-space: nowrap;
+    }
+
+    rgbcct-light-card .mixed-badge.show {
+      display: inline-block;
     }
 
     rgbcct-light-card .collapse {
@@ -167,15 +186,7 @@ export function addStyles(card) {
       box-shadow: 0 0 0 1px var(--divider-color, #ccc);
       background:
         ${wheelWhiteGradient()},
-        conic-gradient(
-          hsl(0, 100%, 50%),
-          hsl(60, 100%, 50%),
-          hsl(120, 100%, 50%),
-          hsl(180, 100%, 50%),
-          hsl(240, 100%, 50%),
-          hsl(300, 100%, 50%),
-          hsl(360, 100%, 50%)
-        );
+        ${hueConicGradient()};
     }
 
     rgbcct-light-card .wheel-shade {
