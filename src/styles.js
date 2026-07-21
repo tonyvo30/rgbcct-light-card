@@ -252,6 +252,11 @@ export function addStyles(card) {
       gap: 10px;
     }
 
+    /* An off segment: dimmed row, hollow (transparent) swatch. */
+    rgbcct-light-card .child.off {
+      opacity: 0.5;
+    }
+
     rgbcct-light-card .child-swatch {
       width: 18px;
       height: 18px;

@@ -54,7 +54,8 @@ sequence:
               'r': s.col[0][0] | int(0),
               'g': s.col[0][1] | int(0),
               'b': s.col[0][2] | int(0),
-              'bri': s.bri | int(255)
+              'bri': s.bri | int(255),
+              'on': (1 if ((state.on | default(true)) and (s.on | default(true))) else 0)
             }] %}
         {%- endfor %}
         {{ ns.items }}
