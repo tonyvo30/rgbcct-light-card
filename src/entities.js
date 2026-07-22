@@ -3,7 +3,7 @@
 // suffix) plus one per segment (suffixed "_segment_<n>"). Anything that
 // needs to reason about that convention imports these helpers instead of
 // hardcoding the suffix, so the string exists exactly once and the
-// base/segment logic isn't duplicated across sync.js and segments.js.
+// base/segment logic isn't duplicated across mixins/sync.js and mixins/segments.js.
 
 const SEGMENT_SUFFIX = '_segment_';
 

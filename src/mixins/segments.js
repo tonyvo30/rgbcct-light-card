@@ -4,7 +4,7 @@
 // propagates across every segment). On/off is driven by the live HA
 // entity states — reliable and instant, unlike the lossy colour read-back.
 
-import { isSegmentEntity, baseEntity, segmentEntity } from './entities.js';
+import { isSegmentEntity, baseEntity, segmentEntity } from '../entities.js';
 
 export const segmentsMixin = {
   // A card is a master (whole-device) card when its entity is the group
