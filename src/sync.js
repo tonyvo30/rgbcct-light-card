@@ -197,8 +197,14 @@ export const syncMixin = {
     if (typeof attr.color_temp_kelvin === 'number') {
       const min = attr.min_color_temp_kelvin ?? 2000;
       const max = attr.max_color_temp_kelvin ?? 6535;
-      const frac = (attr.color_temp_kelvin - min) / (max - min);
-      this.cct = Math.round(Math.min(1, Math.max(0, frac)) * 255);
+      // Guard the divisor: a light reporting equal min/max (fixed color
+      // temp, or a misconfigured integration) would give 0/0 = NaN, which
+      // survives the clamp and blanks the slider / poisons the next send.
+      const span = max - min;
+      if (span > 0) {
+        const frac = (attr.color_temp_kelvin - min) / span;
+        this.cct = Math.round(Math.min(1, Math.max(0, frac)) * 255);
+      }
     }
 
     this.updateUI();

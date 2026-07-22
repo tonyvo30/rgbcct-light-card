@@ -91,6 +91,11 @@ class RGBCTLightCard extends HTMLElement {
     this._pollTimer = null;
     clearTimeout(this._refetchTimer);
     this._refetchTimer = null;
+    // Also cancel a pending send-debounce, so a card removed within the
+    // 100ms window after an edit doesn't fire updateWLED() from a
+    // detached element (updateWLED only checks _hass, which is still set).
+    clearTimeout(this._sendTimer);
+    this._sendTimer = null;
   }
 
   render() {
@@ -180,15 +185,6 @@ class RGBCTLightCard extends HTMLElement {
 // Merge the concern-specific method groups onto the prototype. They're
 // plain method objects, so `this` inside them is the card instance — the
 // same as if they were declared in the class body.
-Object.assign(
-  RGBCTLightCard.prototype,
-  syncMixin,
-  segmentsMixin,
-  uiMixin
-);
+Object.assign(RGBCTLightCard.prototype, syncMixin, segmentsMixin, uiMixin);
 
-
-customElements.define(
-  "rgbcct-light-card",
-  RGBCTLightCard
-);
+customElements.define('rgbcct-light-card', RGBCTLightCard);
