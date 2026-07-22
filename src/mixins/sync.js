@@ -210,7 +210,6 @@ export const syncMixin = {
     this.updateUI();
   },
 
-  // localStorage key for this entity's remembered state.
   storeKey() {
     return `rgbcct-light-card:${this.config.entity}`;
   },

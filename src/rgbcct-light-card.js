@@ -188,3 +188,13 @@ class RGBCTLightCard extends HTMLElement {
 Object.assign(RGBCTLightCard.prototype, syncMixin, segmentsMixin, uiMixin);
 
 customElements.define('rgbcct-light-card', RGBCTLightCard);
+
+// Announce the loaded build in the console — the standard HA custom-card
+// convention, so users can report which version they're running.
+// `__CARD_VERSION__` is replaced with package.json's version at build time
+// by Vite's `define` (see vite.config.js).
+console.info(
+  `%c RGBCCT-LIGHT-CARD %c v${__CARD_VERSION__} `,
+  'color: #fff; background: #3b82f6; font-weight: 700; padding: 2px 4px; border-radius: 3px 0 0 3px;',
+  'color: #3b82f6; background: #1f2937; padding: 2px 4px; border-radius: 0 3px 3px 0;',
+);

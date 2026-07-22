@@ -19,7 +19,9 @@ export default [
       ecmaVersion: 2022,
       sourceType: "module",
       globals: {
-        ...globals.browser
+        ...globals.browser,
+        // Replaced at build time by Vite's `define` (see vite.config.js).
+        __CARD_VERSION__: "readonly"
       }
     },
     rules: {
@@ -30,7 +32,7 @@ export default [
       eqeqeq: ["error", "smart"],
       "no-var": "error",
       "prefer-const": "error",
-      "no-console": "warn",
+      "no-console": ["warn", { allow: ["info"] }],
       "no-else-return": "error"
     }
   },
