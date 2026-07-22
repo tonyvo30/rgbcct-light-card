@@ -17,17 +17,20 @@ export const segmentsMixin = {
   // colour or brightness differs from segment 0 beyond a small tolerance
   // (absorbs WLED/rounding jitter). Needs at least two segments to differ.
   segmentsAreMixed() {
-    const segs = this._segments;
-    if (!Array.isArray(segs) || segs.length < 2) return false;
+    const segments = this._segments;
+    if (!Array.isArray(segments) || segments.length < 2) return false;
 
     const TOL = 4;
     const near = (a, b) => Math.abs((Number(a) || 0) - (Number(b) || 0)) <= TOL;
 
-    const base = segs[0];
+    const first = segments[0];
 
-    return segs.some(
-      (s) =>
-        !near(s.r, base.r) || !near(s.g, base.g) || !near(s.b, base.b) || !near(s.bri, base.bri),
+    return segments.some(
+      (segment) =>
+        !near(segment.r, first.r) ||
+        !near(segment.g, first.g) ||
+        !near(segment.b, first.b) ||
+        !near(segment.bri, first.bri),
     );
   },
 
@@ -42,7 +45,9 @@ export const segmentsMixin = {
   segmentEntityIds() {
     const base = this.deviceBase();
     const states = this._hass?.states || {};
-    return Object.keys(states).filter((k) => isSegmentEntity(k) && baseEntity(k) === base);
+    return Object.keys(states).filter(
+      (entityId) => isSegmentEntity(entityId) && baseEntity(entityId) === base,
+    );
   },
 
   // Is the device's master power on? Read from the group entity's state,
@@ -56,15 +61,15 @@ export const segmentsMixin = {
   // a segment is lit only if the device master is on AND its own segment
   // entity is on. Falls back to the get script's `on` flag, then to on,
   // if that segment has no matching entity.
-  segIsOn(s) {
-    if (s == null) return false;
+  segmentIsOn(segment) {
+    if (segment == null) return false;
     if (!this.deviceOn()) return false;
 
-    const ent = this._hass?.states?.[segmentEntity(this.deviceBase(), s.id)];
-    if (ent) return ent.state === 'on';
+    const entityState = this._hass?.states?.[segmentEntity(this.deviceBase(), segment.id)];
+    if (entityState) return entityState.state === 'on';
 
-    if (s.on === undefined || s.on === null) return true;
-    return Number(s.on) > 0;
+    if (segment.on === undefined || segment.on === null) return true;
+    return Number(segment.on) > 0;
   },
 
   // Render the master's read-only children list (one row per segment:
@@ -74,27 +79,27 @@ export const segmentsMixin = {
     const list = this.childrenList;
     if (!list) return;
 
-    const segs = this._segments || [];
+    const segments = this._segments || [];
 
-    list.innerHTML = segs
-      .map((s) => {
-        const on = this.segIsOn(s);
-        const r = Number(s.r) || 0;
-        const g = Number(s.g) || 0;
-        const b = Number(s.b) || 0;
-        const pct = Math.round(((Number(s.bri) || 0) / 255) * 100);
+    list.innerHTML = segments
+      .map((segment) => {
+        const on = this.segmentIsOn(segment);
+        const r = Number(segment.r) || 0;
+        const g = Number(segment.g) || 0;
+        const b = Number(segment.b) || 0;
+        const percent = Math.round(((Number(segment.bri) || 0) / 255) * 100);
         return `
         <div class="child${on ? '' : ' off'}">
           <span class="child-swatch" style="background: ${on ? `rgb(${r}, ${g}, ${b})` : 'transparent'}"></span>
-          <span class="child-name">Segment ${s.id}</span>
-          <span class="child-bri">${on ? pct + '%' : 'Off'}</span>
+          <span class="child-name">Segment ${segment.id}</span>
+          <span class="child-bri">${on ? percent + '%' : 'Off'}</span>
         </div>
       `;
       })
       .join('');
 
     const count = this.querySelector('#children-count');
-    if (count) count.textContent = segs.length ? `(${segs.length})` : '';
+    if (count) count.textContent = segments.length ? `(${segments.length})` : '';
   },
 
   toggleChildren() {
@@ -103,14 +108,14 @@ export const segmentsMixin = {
   },
 
   applyChildrenOpen() {
-    const wrap = this.querySelector('.children');
-    if (!wrap) return;
+    const wrapper = this.querySelector('.children');
+    if (!wrapper) return;
 
-    wrap.classList.toggle('open', !!this._childrenOpen);
+    wrapper.classList.toggle('open', !!this._childrenOpen);
 
-    const chev = this.querySelector('#children-chevron');
-    if (chev) {
-      chev.setAttribute('icon', this._childrenOpen ? 'mdi:chevron-up' : 'mdi:chevron-down');
+    const chevron = this.querySelector('#children-chevron');
+    if (chevron) {
+      chevron.setAttribute('icon', this._childrenOpen ? 'mdi:chevron-up' : 'mdi:chevron-down');
     }
   },
 
@@ -166,9 +171,9 @@ export const segmentsMixin = {
         toggle.checked = false;
         return;
       }
-      const segs = this.segmentEntityIds();
-      toggle.checked = segs.length
-        ? segs.some((id) => this._hass.states[id]?.state === 'on')
+      const segmentIds = this.segmentEntityIds();
+      toggle.checked = segmentIds.length
+        ? segmentIds.some((id) => this._hass.states[id]?.state === 'on')
         : true;
       return;
     }

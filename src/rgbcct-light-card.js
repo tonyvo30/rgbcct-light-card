@@ -13,7 +13,7 @@ import { uiMixin } from './mixins/ui.js';
 //   - mixins/sync.js      device-state fetch, entity-change triggers, persistence
 //   - mixins/segments.js  master/segment detection, children list, on/off power
 //   - mixins/ui.js        the DOM update methods
-class RGBCTLightCard extends HTMLElement {
+class RGBCCTLightCard extends HTMLElement {
   setConfig(config) {
     if (!config.entity) {
       throw new Error('You must define an entity');
@@ -185,9 +185,9 @@ class RGBCTLightCard extends HTMLElement {
 // Merge the concern-specific method groups onto the prototype. They're
 // plain method objects, so `this` inside them is the card instance — the
 // same as if they were declared in the class body.
-Object.assign(RGBCTLightCard.prototype, syncMixin, segmentsMixin, uiMixin);
+Object.assign(RGBCCTLightCard.prototype, syncMixin, segmentsMixin, uiMixin);
 
-customElements.define('rgbcct-light-card', RGBCTLightCard);
+customElements.define('rgbcct-light-card', RGBCCTLightCard);
 
 // Announce the loaded build in the console — the standard HA custom-card
 // convention, so users can report which version they're running.

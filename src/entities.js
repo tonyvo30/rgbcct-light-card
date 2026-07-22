@@ -17,4 +17,4 @@ export const isSegmentEntity = (id) => id.includes(SEGMENT_SUFFIX);
 export const baseEntity = (id) => (isSegmentEntity(id) ? id.split(SEGMENT_SUFFIX)[0] : id);
 
 // Build the entity id for segment `n` of the given base (group) entity.
-export const segmentEntity = (base, n) => `${base}${SEGMENT_SUFFIX}${n}`;
+export const segmentEntity = (base, segmentNumber) => `${base}${SEGMENT_SUFFIX}${segmentNumber}`;

@@ -2,19 +2,19 @@ import { radiusToSat } from './color.js';
 
 export function setupEvents(card) {
   if (card.compact) {
-    const el = card.querySelector('.compact-card');
+    const element = card.querySelector('.compact-card');
 
-    if (el) {
-      el.onclick = () => card.toggleCompact();
+    if (element) {
+      element.onclick = () => card.toggleCompact();
     }
 
     const toggle = card.toggle;
 
     if (toggle) {
       // Keep flipping the switch from also expanding the card.
-      toggle.addEventListener('click', (e) => e.stopPropagation());
-      toggle.addEventListener('change', (e) => {
-        e.stopPropagation();
+      toggle.addEventListener('click', (event) => event.stopPropagation());
+      toggle.addEventListener('change', (event) => {
+        event.stopPropagation();
         card.setPower(toggle.checked);
       });
     }
@@ -22,11 +22,11 @@ export function setupEvents(card) {
     return;
   }
 
-  const bind = (input, prop) => {
+  const bind = (input, property) => {
     if (!input) return;
 
     input.oninput = () => {
-      card[prop] = Number(input.value);
+      card[property] = Number(input.value);
       card.updateReadouts();
       card.send();
     };
@@ -67,17 +67,17 @@ function setupWheel(card) {
 
   if (!wheel) return;
 
-  const pick = (ev) => {
+  const pick = (event) => {
     const rect = wheel.getBoundingClientRect();
-    const maxR = rect.width / 2;
+    const maxRadius = rect.width / 2;
 
-    const x = ev.clientX - rect.left - maxR;
-    const y = ev.clientY - rect.top - maxR;
+    const x = event.clientX - rect.left - maxRadius;
+    const y = event.clientY - rect.top - maxRadius;
 
     // Store the actual click radius so the handle tracks the cursor
     // even across the fully-saturated outer band (where saturation
     // alone can't locate it).
-    card.satR = Math.min(1, Math.sqrt(x * x + y * y) / maxR);
+    card.satR = Math.min(1, Math.sqrt(x * x + y * y) / maxRadius);
     card.s = radiusToSat(card.satR);
 
     // Clockwise angle from the top: top = 0deg = hue 0 (red).
@@ -91,14 +91,14 @@ function setupWheel(card) {
     card.send();
   };
 
-  wheel.addEventListener('pointerdown', (ev) => {
+  wheel.addEventListener('pointerdown', (event) => {
     card._wheelActive = true;
-    wheel.setPointerCapture(ev.pointerId);
-    pick(ev);
+    wheel.setPointerCapture(event.pointerId);
+    pick(event);
   });
 
-  wheel.addEventListener('pointermove', (ev) => {
-    if (card._wheelActive) pick(ev);
+  wheel.addEventListener('pointermove', (event) => {
+    if (card._wheelActive) pick(event);
   });
 
   const release = () => {
@@ -135,7 +135,7 @@ function setupColorInput(card) {
 
   // The button sits inside the wheel, so keep its click from also
   // registering as a colour pick on the wheel underneath.
-  input.addEventListener('pointerdown', (e) => e.stopPropagation());
+  input.addEventListener('pointerdown', (event) => event.stopPropagation());
 
   input.oninput = () => {
     const hex = input.value;

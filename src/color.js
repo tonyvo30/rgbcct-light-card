@@ -61,8 +61,8 @@ export function radiusToSat(frac) {
 }
 
 export function satToRadius(s) {
-  const c = Math.min(1, Math.max(0, s));
-  return c * c * SAT_FULL_RADIUS;
+  const clamped = Math.min(1, Math.max(0, s));
+  return clamped * clamped * SAT_FULL_RADIUS;
 }
 
 // The rainbow hue ring used as the wheel's base and, on a master card,
@@ -87,9 +87,9 @@ export function wheelWhiteGradient() {
   const stops = [];
 
   for (let i = 0; i <= 20; i++) {
-    const f = i / 20;
-    const alpha = (1 - radiusToSat(f)).toFixed(3);
-    stops.push(`rgba(255, 255, 255, ${alpha}) ${Math.round(f * 100)}%`);
+    const frac = i / 20;
+    const alpha = (1 - radiusToSat(frac)).toFixed(3);
+    stops.push(`rgba(255, 255, 255, ${alpha}) ${Math.round(frac * 100)}%`);
   }
 
   return `radial-gradient(circle at center, ${stops.join(', ')})`;
@@ -102,20 +102,20 @@ export function rgbToHsv(r, g, b) {
 
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
-  const d = max - min;
+  const delta = max - min;
 
   let h = 0;
 
-  if (d !== 0) {
-    if (max === r) h = ((g - b) / d) % 6;
-    else if (max === g) h = (b - r) / d + 2;
-    else h = (r - g) / d + 4;
+  if (delta !== 0) {
+    if (max === r) h = ((g - b) / delta) % 6;
+    else if (max === g) h = (b - r) / delta + 2;
+    else h = (r - g) / delta + 4;
 
     h *= 60;
     if (h < 0) h += 360;
   }
 
-  const s = max === 0 ? 0 : d / max;
+  const s = max === 0 ? 0 : delta / max;
 
   return [h, s, max];
 }
