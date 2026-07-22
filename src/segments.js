@@ -25,11 +25,9 @@ export const segmentsMixin = {
 
     const base = segs[0];
 
-    return segs.some((s) =>
-      !near(s.r, base.r) ||
-      !near(s.g, base.g) ||
-      !near(s.b, base.b) ||
-      !near(s.bri, base.bri)
+    return segs.some(
+      (s) =>
+        !near(s.r, base.r) || !near(s.g, base.g) || !near(s.b, base.b) || !near(s.bri, base.bri),
     );
   },
 
@@ -92,7 +90,8 @@ export const segmentsMixin = {
           <span class="child-bri">${on ? pct + '%' : 'Off'}</span>
         </div>
       `;
-      }).join('');
+      })
+      .join('');
 
     const count = this.querySelector('#children-count');
     if (count) count.textContent = segs.length ? `(${segs.length})` : '';
@@ -111,10 +110,7 @@ export const segmentsMixin = {
 
     const chev = this.querySelector('#children-chevron');
     if (chev) {
-      chev.setAttribute(
-        "icon",
-        this._childrenOpen ? "mdi:chevron-up" : "mdi:chevron-down"
-      );
+      chev.setAttribute('icon', this._childrenOpen ? 'mdi:chevron-up' : 'mdi:chevron-down');
     }
   },
 
@@ -146,11 +142,7 @@ export const segmentsMixin = {
       targets = [this.config.entity];
     }
 
-    this._hass.callService(
-      "light",
-      on ? "turn_on" : "turn_off",
-      { entity_id: targets }
-    );
+    this._hass.callService('light', on ? 'turn_on' : 'turn_off', { entity_id: targets });
 
     // No optimistic state to stash: on/off is reliable on the HA entities,
     // so the imminent state_changed push (handled in `set hass`) refreshes

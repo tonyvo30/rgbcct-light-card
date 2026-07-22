@@ -22,6 +22,5 @@ export async function updateWLED(card) {
       w: card.w,
       cct: card.cct,
     },
-    }
-  );
+  });
 }
