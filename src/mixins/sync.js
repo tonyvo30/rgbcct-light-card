@@ -39,7 +39,7 @@ export const syncMixin = {
     this._lastFetchAt = Date.now();
 
     try {
-      const res = await this._hass.callWS({
+      const result = await this._hass.callWS({
         type: 'call_service',
         domain: 'script',
         service: GET_SCRIPT,
@@ -47,34 +47,38 @@ export const syncMixin = {
         return_response: true,
       });
 
-      const d = res?.response;
-      if (!d) return;
+      const wled = result?.response;
+      if (!wled) return;
 
       // The user may have started interacting while this was in flight;
       // if so, their input wins — drop the fetched result.
       if (this._wheelActive || Date.now() < (this._holdUntil || 0)) return;
 
-      const n = (val, fallback) => {
-        const x = Number(val);
-        return Number.isFinite(x) ? x : fallback;
+      const toNumberOrDefault = (value, fallback) => {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : fallback;
       };
 
-      this.bri = n(d.bri, this.bri);
-      this.w = n(d.w, this.w);
-      this.cct = n(d.cct, this.cct);
-      this.setRgb(n(d.r, this.r), n(d.g, this.g), n(d.b, this.b));
+      this.bri = toNumberOrDefault(wled.bri, this.bri);
+      this.w = toNumberOrDefault(wled.w, this.w);
+      this.cct = toNumberOrDefault(wled.cct, this.cct);
+      this.setRgb(
+        toNumberOrDefault(wled.r, this.r),
+        toNumberOrDefault(wled.g, this.g),
+        toNumberOrDefault(wled.b, this.b),
+      );
 
       // Per-segment list for the master's children view. The script
       // sends it JSON-encoded; HA may hand it back already parsed.
-      let segs = d.segments;
-      if (typeof segs === 'string') {
+      let segments = wled.segments;
+      if (typeof segments === 'string') {
         try {
-          segs = JSON.parse(segs);
+          segments = JSON.parse(segments);
         } catch (e) {
-          segs = null;
+          segments = null;
         }
       }
-      if (Array.isArray(segs)) this._segments = segs;
+      if (Array.isArray(segments)) this._segments = segments;
 
       // Live device state wins over the lossy entity read-back.
       this._stateIsOwned = true;
@@ -100,15 +104,15 @@ export const syncMixin = {
   // surfaces rgb changes on any of these entities, so pure colour
   // changes are caught by the poll fallback, not this trigger.
   watchedEntities() {
-    const e = this.config.entity;
-    const base = baseEntity(e);
+    const entity = this.config.entity;
+    const base = baseEntity(entity);
 
     // The group entity and every one of its segments all share this base,
     // so a single baseEntity() comparison catches the whole device.
     const states = this._hass?.states || {};
-    const ids = Object.keys(states).filter((k) => baseEntity(k) === base);
+    const ids = Object.keys(states).filter((entityId) => baseEntity(entityId) === base);
 
-    return ids.length ? ids : [e];
+    return ids.length ? ids : [entity];
   },
 
   // HA pushes entity updates to every connected frontend, so when the
@@ -125,15 +129,15 @@ export const syncMixin = {
     let changed = false;
 
     for (const id of this.watchedEntities()) {
-      const lu = this._hass?.states?.[id]?.last_updated;
-      if (!lu) continue;
+      const lastUpdated = this._hass?.states?.[id]?.last_updated;
+      if (!lastUpdated) continue;
 
       // Only a move from a previously-seen value counts (skip the first
       // sighting so we don't re-fetch immediately after the initial one).
-      if (this._lastSeen[id] !== undefined && lu !== this._lastSeen[id]) {
+      if (this._lastSeen[id] !== undefined && lastUpdated !== this._lastSeen[id]) {
         changed = true;
       }
-      this._lastSeen[id] = lu;
+      this._lastSeen[id] = lastUpdated;
     }
 
     if (!changed) return;
@@ -149,8 +153,8 @@ export const syncMixin = {
   // Coalesce bursts of entity updates into at most one /json/state read
   // per REFETCH_MIN_MS, re-checking the interaction guards at fire time.
   refetchThrottled() {
-    const MIN = 1500;
-    const wait = MIN - (Date.now() - (this._lastFetchAt || 0));
+    const REFETCH_MIN_MS = 1500;
+    const wait = REFETCH_MIN_MS - (Date.now() - (this._lastFetchAt || 0));
 
     if (wait <= 0) {
       this.fetchWledState();
@@ -179,30 +183,30 @@ export const syncMixin = {
     // background HA push doesn't snap controls back (e.g. brightness 255).
     if (this._stateIsOwned || this._wheelActive || Date.now() < (this._holdUntil || 0)) return;
 
-    const attr = state.attributes ?? {};
+    const attributes = state.attributes ?? {};
 
-    if (typeof attr.brightness === 'number') {
-      this.bri = attr.brightness;
+    if (typeof attributes.brightness === 'number') {
+      this.bri = attributes.brightness;
     }
 
-    if (Array.isArray(attr.rgbw_color)) {
-      const [r, g, b, w] = attr.rgbw_color;
+    if (Array.isArray(attributes.rgbw_color)) {
+      const [r, g, b, w] = attributes.rgbw_color;
       this.setRgb(r, g, b);
       this.w = w;
-    } else if (Array.isArray(attr.rgb_color)) {
-      const [r, g, b] = attr.rgb_color;
+    } else if (Array.isArray(attributes.rgb_color)) {
+      const [r, g, b] = attributes.rgb_color;
       this.setRgb(r, g, b);
     }
 
-    if (typeof attr.color_temp_kelvin === 'number') {
-      const min = attr.min_color_temp_kelvin ?? 2000;
-      const max = attr.max_color_temp_kelvin ?? 6535;
+    if (typeof attributes.color_temp_kelvin === 'number') {
+      const minKelvin = attributes.min_color_temp_kelvin ?? 2000;
+      const maxKelvin = attributes.max_color_temp_kelvin ?? 6535;
       // Guard the divisor: a light reporting equal min/max (fixed color
       // temp, or a misconfigured integration) would give 0/0 = NaN, which
       // survives the clamp and blanks the slider / poisons the next send.
-      const span = max - min;
+      const span = maxKelvin - minKelvin;
       if (span > 0) {
-        const frac = (attr.color_temp_kelvin - min) / span;
+        const frac = (attributes.color_temp_kelvin - minKelvin) / span;
         this.cct = Math.round(Math.min(1, Math.max(0, frac)) * 255);
       }
     }
@@ -220,16 +224,16 @@ export const syncMixin = {
       const raw = localStorage.getItem(this.storeKey());
       if (!raw) return;
 
-      const s = JSON.parse(raw);
-      const num = (v) => typeof v === 'number' && isFinite(v);
+      const saved = JSON.parse(raw);
+      const isNumber = (value) => typeof value === 'number' && isFinite(value);
 
-      if (num(s.h)) this.h = s.h;
-      if (num(s.s)) this.s = s.s;
-      if (num(s.v)) this.v = s.v;
-      if (num(s.satR)) this.satR = s.satR;
-      if (num(s.bri)) this.bri = s.bri;
-      if (num(s.w)) this.w = s.w;
-      if (num(s.cct)) this.cct = s.cct;
+      if (isNumber(saved.h)) this.h = saved.h;
+      if (isNumber(saved.s)) this.s = saved.s;
+      if (isNumber(saved.v)) this.v = saved.v;
+      if (isNumber(saved.satR)) this.satR = saved.satR;
+      if (isNumber(saved.bri)) this.bri = saved.bri;
+      if (isNumber(saved.w)) this.w = saved.w;
+      if (isNumber(saved.cct)) this.cct = saved.cct;
 
       // We have our own state now; the entity read-back must not stomp it.
       this._stateIsOwned = true;

@@ -9,16 +9,16 @@ export const uiMixin = {
   // Push current state into the sliders (skipping any control
   // the user is actively dragging) and refresh the readouts.
   updateUI() {
-    const set = (el, val) => {
-      if (el && el !== document.activeElement) {
-        el.value = val;
+    const setValue = (element, value) => {
+      if (element && element !== document.activeElement) {
+        element.value = value;
       }
     };
 
-    set(this.brightness, this.bri);
-    set(this.value, Math.round(this.v * 255));
-    set(this.white, this.w);
-    set(this.cctInput, this.cct);
+    setValue(this.brightness, this.bri);
+    setValue(this.value, Math.round(this.v * 255));
+    setValue(this.white, this.w);
+    setValue(this.cctInput, this.cct);
 
     // Skip while the user is dragging the wheel so we don't
     // fight the handle they're moving.
@@ -38,13 +38,13 @@ export const uiMixin = {
 
     if (!wheel || !handle) return;
 
-    const maxR = (wheel.clientWidth || 180) / 2;
+    const maxRadius = (wheel.clientWidth || 180) / 2;
     const frac = typeof this.satR === 'number' ? this.satR : satToRadius(this.s);
-    const radius = frac * maxR;
-    const rad = (this.h * Math.PI) / 180;
+    const radius = frac * maxRadius;
+    const radians = (this.h * Math.PI) / 180;
 
-    handle.style.left = maxR + radius * Math.sin(rad) + 'px';
-    handle.style.top = maxR - radius * Math.cos(rad) + 'px';
+    handle.style.left = maxRadius + radius * Math.sin(radians) + 'px';
+    handle.style.top = maxRadius - radius * Math.cos(radians) + 'px';
 
     if (this.wheelShade) {
       this.wheelShade.style.opacity = (1 - this.v).toFixed(3);
@@ -109,38 +109,41 @@ export const uiMixin = {
   },
 
   updateTextReadouts() {
-    const text = (id, val) => {
-      const el = this.querySelector(id);
-      if (el) el.textContent = val;
+    const setText = (id, value) => {
+      const element = this.querySelector(id);
+      if (element) element.textContent = value;
     };
 
-    text('#bri-val', this.bri);
-    text('#rgb-val', `${this.r}, ${this.g}, ${this.b}`);
-    text('#v-val', Math.round(this.v * 255));
-    text('#w-val', this.w);
-    text('#cct-val', this.cct);
+    setText('#bri-val', this.bri);
+    setText('#rgb-val', `${this.r}, ${this.g}, ${this.b}`);
+    setText('#v-val', Math.round(this.v * 255));
+    setText('#w-val', this.w);
+    setText('#cct-val', this.cct);
   },
 
   // WLED-style gradient tracks. Brightness runs black -> the live
   // colour, Value runs black -> the pure hue, White black -> white,
   // and CCT warm -> cool.
   updateSliderTracks() {
-    const bg = (el, gradient) => {
-      if (el) el.style.background = gradient;
+    const setBackground = (element, gradient) => {
+      if (element) element.style.background = gradient;
     };
 
-    bg(this.brightness, `linear-gradient(90deg, #000, rgb(${this.r}, ${this.g}, ${this.b}))`);
-    bg(this.value, `linear-gradient(90deg, #000, hsl(${this.h}, 100%, 50%))`);
-    bg(this.white, `linear-gradient(90deg, #000, #fff)`);
-    bg(this.cctInput, `linear-gradient(90deg, #ffb46b, #fff, #a9c8ff)`);
+    setBackground(
+      this.brightness,
+      `linear-gradient(90deg, #000, rgb(${this.r}, ${this.g}, ${this.b}))`,
+    );
+    setBackground(this.value, `linear-gradient(90deg, #000, hsl(${this.h}, 100%, 50%))`);
+    setBackground(this.white, `linear-gradient(90deg, #000, #fff)`);
+    setBackground(this.cctInput, `linear-gradient(90deg, #ffb46b, #fff, #a9c8ff)`);
   },
 
   // Keep the native colour picker seeded with the current colour so it
   // opens on it. Skip while it's focused/open so we don't fight it.
   updateColorPicker() {
     if (this.colorInput && this.colorInput !== document.activeElement) {
-      const hex = (v) =>
-        Math.max(0, Math.min(255, Math.round(v)))
+      const hex = (channel) =>
+        Math.max(0, Math.min(255, Math.round(channel)))
           .toString(16)
           .padStart(2, '0');
       this.colorInput.value = `#${hex(this.r)}${hex(this.g)}${hex(this.b)}`;
