@@ -3,16 +3,16 @@ import { setupEvents } from './events.js';
 import { updateWLED } from './wled.js';
 import { addStyles } from './styles.js';
 import { hsvToRgb, rgbToHsv, satToRadius, SAT_FULL_RADIUS } from './color.js';
-import { syncMixin } from './sync.js';
-import { segmentsMixin } from './segments.js';
-import { uiMixin } from './ui.js';
+import { syncMixin } from './mixins/sync.js';
+import { segmentsMixin } from './mixins/segments.js';
+import { uiMixin } from './mixins/ui.js';
 
 // The custom element itself: lifecycle (setConfig / hass / connect), the
 // working colour state (HSV <-> r/g/b), and sending to WLED. The bulkier
 // concerns live in mixins merged onto the prototype at the bottom:
-//   - sync.js      device-state fetch, entity-change triggers, persistence
-//   - segments.js  master/segment detection, children list, on/off power
-//   - ui.js        the DOM update methods
+//   - mixins/sync.js      device-state fetch, entity-change triggers, persistence
+//   - mixins/segments.js  master/segment detection, children list, on/off power
+//   - mixins/ui.js        the DOM update methods
 class RGBCTLightCard extends HTMLElement {
   setConfig(config) {
     if (!config.entity) {

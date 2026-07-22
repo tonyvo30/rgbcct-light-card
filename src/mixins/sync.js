@@ -7,7 +7,7 @@
 // is lossy for the raw multi-channel writes we make, so it's only a
 // fallback — the /json/state fetch is the source of truth.
 
-import { baseEntity } from './entities.js';
+import { baseEntity } from '../entities.js';
 
 // The HA script this card calls to read WLED's true live state.
 const GET_SCRIPT = 'get_wled_with_cct';
