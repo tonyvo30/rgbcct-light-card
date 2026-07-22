@@ -108,7 +108,6 @@ export const uiMixin = {
     if (badge) badge.classList.toggle('show', mixed);
   },
 
-  // The numeric readout beside each control.
   updateTextReadouts() {
     const text = (id, val) => {
       const el = this.querySelector(id);
