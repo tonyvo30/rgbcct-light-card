@@ -8,9 +8,25 @@
 // fallback — the /json/state fetch is the source of truth.
 
 import { baseEntity } from '../entities.js';
+import { subscribeToWledPush } from '../wled-socket.js';
 
 // The HA script this card calls to read WLED's true live state.
 const GET_SCRIPT = 'get_wled_with_cct';
+
+// One device-registry download shared by every card on the page — a master
+// plus its segment cards would otherwise each pull the full list (which can
+// be hundreds of entries). Cleared on failure so a transient error retries.
+let deviceRegistryRequest = null;
+
+function listDeviceRegistry(hass) {
+  if (!deviceRegistryRequest) {
+    deviceRegistryRequest = hass.callWS({ type: 'config/device_registry/list' }).catch((error) => {
+      deviceRegistryRequest = null;
+      throw error;
+    });
+  }
+  return deviceRegistryRequest;
+}
 
 export const syncMixin = {
   fetchStateOnce() {
@@ -18,6 +34,109 @@ export const syncMixin = {
 
     this._fetched = true;
     this.fetchWledState();
+    this.ensureWledPushSubscription();
+  },
+
+  // Resolve the WLED device's host (ip[:port]) from HA's device registry —
+  // the same configuration_url the HA scripts use, read here via the
+  // registry WebSocket API so no script changes or config are needed.
+  // Success is cached; failure isn't, so a transient registry hiccup can
+  // recover on a later call. null -> the poll stays the only sync path.
+  async resolveWledHost() {
+    if (this._wledHost !== undefined) return this._wledHost;
+    if (!this._hass) return null;
+
+    const generation = this._deviceSyncGeneration;
+
+    try {
+      const registryEntry = await this._hass.callWS({
+        type: 'config/entity_registry/get',
+        entity_id: this.config.entity,
+      });
+
+      const devices = await listDeviceRegistry(this._hass);
+      const device = devices.find((candidate) => candidate.id === registryEntry.device_id);
+
+      const configurationUrl = device?.configuration_url || '';
+      const host = configurationUrl.replace(/^[a-z]+:\/\//i, '').replace(/\/.*$/, '');
+
+      // Stale generation (see resetDeviceSync): this host is the old
+      // entity's — don't cache it over the reset.
+      if (generation !== this._deviceSyncGeneration) return null;
+
+      if (host) this._wledHost = host;
+
+      return host || null;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  // Open (or join) the shared doorbell socket to this card's device. Every
+  // frame just triggers the throttled re-read, so the push path reuses all
+  // the guards the poll path already has. Safe to call repeatedly — no-ops
+  // once subscribed, and quietly does nothing when the host can't be
+  // resolved or the page is HTTPS (the poll tier covers both).
+  async ensureWledPushSubscription() {
+    if (this._unsubscribeWledPush || !this._hass || !this.config) return;
+
+    // Escape hatch: `push: false` in the card config disables the direct
+    // WLED socket entirely (the 3s poll takes over) — useful to isolate
+    // the socket when debugging, or to spare WLED's few WS client slots.
+    if (this.config.push === false) return;
+
+    // HTTPS pages can't open ws:// (mixed content) — bail before spending
+    // registry round trips on a socket that can't exist.
+    if (window.location.protocol === 'https:') return;
+
+    const generation = this._deviceSyncGeneration;
+    const host = await this.resolveWledHost();
+    // Bail if the await outran us: no host, a parallel call already
+    // subscribed, the card detached (subscribing would leak a socket slot),
+    // or a reset re-pointed us at a different device (see resetDeviceSync).
+    if (!host || this._unsubscribeWledPush || !this.isConnected) return;
+    if (generation !== this._deviceSyncGeneration) return;
+
+    this._unsubscribeWledPush = subscribeToWledPush(host, () => {
+      // Don't fight the user: skip while dragging or in the post-edit hold
+      // window. Record the miss — colour never surfaces on the entity, so a
+      // swallowed frame gets no retry until the poll notices the flag.
+      if (this._wheelActive || Date.now() < (this._holdUntil || 0)) {
+        this._refetchSuppressed = true;
+        return;
+      }
+
+      // Jitter: every card on this device hears the same frame at once, so
+      // an immediate fetch would hit the ESP with N concurrent reads. Spread
+      // them out; refetchThrottled re-checks the guards at fire time.
+      if (this._doorbellJitterTimer) return;
+      this._doorbellJitterTimer = setTimeout(() => {
+        this._doorbellJitterTimer = null;
+        this.refetchThrottled();
+      }, Math.random() * 600);
+    });
+  },
+
+  // Forget everything bound to the current device — called when setConfig
+  // re-points this element at a different entity (the card-editor preview
+  // does exactly that). A reset can't cancel a promise that's already
+  // awaiting, only make its continuation a no-op: bumping the generation
+  // does that. Host resolution, the push subscription, and the state fetch
+  // each capture the generation before their awaits and bail if it moved,
+  // so none of them can rebind the old device's doorbell or persist its
+  // state under the new entity's storage key.
+  resetDeviceSync() {
+    this._deviceSyncGeneration = (this._deviceSyncGeneration || 0) + 1;
+    this._unsubscribeWledPush?.();
+    this._unsubscribeWledPush = null;
+    clearTimeout(this._doorbellJitterTimer);
+    this._doorbellJitterTimer = null;
+    this._wledHost = undefined;
+    this._fetched = false;
+    this._lastSeen = {};
+    this._segments = null;
+    this._stateIsOwned = false;
+    this._refetchSuppressed = false;
   },
 
   // Ask the "get wled with cct" HA script for the device's live state
@@ -26,6 +145,11 @@ export const syncMixin = {
   // until this resolves, or if WLED/the script is unreachable.
   async fetchWledState() {
     if (!this._hass) return;
+
+    // Never call the get script for an entity HA doesn't know: the card
+    // editor's live preview reconfigures on every keystroke, and partial
+    // ids would fire script runs that fail noisily (empty ip, bad segment).
+    if (!this._hass.states?.[this.config.entity]) return;
 
     // Only one fetch in flight; if another is requested meanwhile, run
     // it once this one finishes (so a change during the request isn't
@@ -37,6 +161,10 @@ export const syncMixin = {
 
     this._fetching = true;
     this._lastFetchAt = Date.now();
+    // This read covers any doorbell/trigger the guards suppressed earlier.
+    this._refetchSuppressed = false;
+
+    const generation = this._deviceSyncGeneration;
 
     try {
       const result = await this._hass.callWS({
@@ -49,6 +177,11 @@ export const syncMixin = {
 
       const wled = result?.response;
       if (!wled) return;
+
+      // Stale generation (see resetDeviceSync): adopting this would persist
+      // the old device's state under the new entity's key. The queued
+      // follow-up fetch covers the new entity.
+      if (generation !== this._deviceSyncGeneration) return;
 
       // The user may have started interacting while this was in flight;
       // if so, their input wins — drop the fetched result.
@@ -144,8 +277,12 @@ export const syncMixin = {
 
     // Don't fight the user: skip while dragging or inside the post-edit
     // hold window (the client making the change already has the state;
-    // idle clients re-fetch and reflect it).
-    if (this._wheelActive || Date.now() < (this._holdUntil || 0)) return;
+    // idle clients re-fetch and reflect it). Remember the skip so the
+    // poll tick picks it up once the guards clear.
+    if (this._wheelActive || Date.now() < (this._holdUntil || 0)) {
+      this._refetchSuppressed = true;
+      return;
+    }
 
     this.refetchThrottled();
   },
@@ -167,6 +304,10 @@ export const syncMixin = {
       this._refetchTimer = null;
       if (!this._wheelActive && Date.now() >= (this._holdUntil || 0)) {
         this.fetchWledState();
+      } else {
+        // Guards ate the scheduled re-read; leave a marker so the poll
+        // tick retries once they clear instead of dropping it entirely.
+        this._refetchSuppressed = true;
       }
     }, wait);
   },

@@ -6,6 +6,12 @@ import { hsvToRgb, rgbToHsv, satToRadius, SAT_FULL_RADIUS } from './color.js';
 import { syncMixin } from './mixins/sync.js';
 import { segmentsMixin } from './mixins/segments.js';
 import { uiMixin } from './mixins/ui.js';
+import { wledPushIsLive } from './wled-socket.js';
+
+// While the doorbell socket is live it delivers external changes instantly,
+// so the poll only re-reads once the last fetch is this stale — a safety
+// net, not a sync path. With the socket down, every 3s tick refetches.
+const SOCKET_LIVE_POLL_MS = 60000;
 
 // The custom element itself: lifecycle (setConfig / hass / connect), the
 // working colour state (HSV <-> r/g/b), and sending to WLED. The bulkier
@@ -17,6 +23,13 @@ class RGBCCTLightCard extends HTMLElement {
   setConfig(config) {
     if (!config.entity) {
       throw new Error('You must define an entity');
+    }
+
+    // A re-point to a different entity (card-editor preview) must shed the
+    // old device's socket and sync state first, or the card keeps listening
+    // to the wrong strip.
+    if (this.config && this.config.entity !== config.entity) {
+      this.resetDeviceSync();
     }
 
     this.config = config;
@@ -73,22 +86,62 @@ class RGBCCTLightCard extends HTMLElement {
   }
 
   connectedCallback() {
-    // Poll the true /json/state as a fallback. The entity-change trigger
-    // handles CCT/brightness instantly, but colour changes never surface
-    // on the (color_temp-mode) entity, so nothing else would ever pull a
-    // sibling/other-device colour change in. Guarded so it never fights
-    // an active edit, and throttled so it can't stack with triggers.
+    // Tiered poll of the true /json/state. Colour never surfaces on the
+    // (color_temp-mode) entity, so whenever the doorbell socket is
+    // unavailable (HTTPS page, WLED rebooting, host unresolved) this tick
+    // is the only thing that catches an external colour change. It's a
+    // standing check, not a mode switch: no live socket -> the original 3s
+    // cadence resumes on its own. Guarded and throttled like the triggers.
     clearInterval(this._pollTimer);
     this._pollTimer = setInterval(() => {
       if (!this._hass || !this.config) return;
       if (this._wheelActive || Date.now() < (this._holdUntil || 0)) return;
+      // A suppressed doorbell/trigger (guards were active when it fired)
+      // overrides the live-socket tier: the frame already came and won't
+      // repeat, so this tick is its retry.
+      if (
+        !this._refetchSuppressed &&
+        this._wledHost &&
+        wledPushIsLive(this._wledHost) &&
+        Date.now() - (this._lastFetchAt || 0) < SOCKET_LIVE_POLL_MS
+      ) {
+        return;
+      }
       this.refetchThrottled();
     }, 3000);
+
+    // Covers DOM re-attach (dashboard switches): the host is cached, so
+    // rejoining the shared socket is instant. The very first subscription
+    // happens in fetchStateOnce(), once _hass exists.
+    this.ensureWledPushSubscription();
+
+    // A hidden tab doesn't need instant push, but its socket still holds
+    // one of WLED's few WS client slots (and ESP heap) — release it, and
+    // rejoin + catch up when the tab becomes visible again.
+    this._onVisibilityChange = () => {
+      if (document.hidden) {
+        this._unsubscribeWledPush?.();
+        this._unsubscribeWledPush = null;
+      } else {
+        this.ensureWledPushSubscription();
+        this.refetchThrottled();
+      }
+    };
+    document.addEventListener('visibilitychange', this._onVisibilityChange);
   }
 
   disconnectedCallback() {
     clearInterval(this._pollTimer);
     this._pollTimer = null;
+    if (this._onVisibilityChange) {
+      document.removeEventListener('visibilitychange', this._onVisibilityChange);
+      this._onVisibilityChange = null;
+    }
+    // Leave the shared doorbell socket; the last card out closes it.
+    this._unsubscribeWledPush?.();
+    this._unsubscribeWledPush = null;
+    clearTimeout(this._doorbellJitterTimer);
+    this._doorbellJitterTimer = null;
     clearTimeout(this._refetchTimer);
     this._refetchTimer = null;
     // Also cancel a pending send-debounce, so a card removed within the

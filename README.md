@@ -14,9 +14,12 @@ light dialog.
   propagates across every segment.
 - **Compact mode**: a one-line icon + name + brightness + toggle.
 
-All communication with WLED goes through two Home Assistant scripts, so **no
-device IPs live in the card** and there are no CORS issues — Home Assistant
-makes the HTTP requests server-side.
+All reads and writes go through two Home Assistant scripts, so **no device IPs
+are hardcoded or mapped anywhere** and there are no CORS issues — Home Assistant
+makes the HTTP requests server-side. On HTTP-served dashboards the card also
+listens to the strip's own WebSocket (host auto-resolved from HA's device
+registry) so changes made elsewhere — the WLED app, another dashboard — appear
+within about a second.
 
 ---
 
@@ -109,7 +112,7 @@ resources:
 ```
 
 The bundle logs its version to the browser console on load
-(`RGBCCT-LIGHT-CARD v0.1.0`), so you can confirm which build is live.
+(`RGBCCT-LIGHT-CARD v0.2.0`), so you can confirm which build is live.
 
 > The filename has **no content hash** on purpose — the HA resource URL stays
 > stable across rebuilds, so you never have to re-register it. After updating
@@ -164,6 +167,7 @@ name: Living Room
 | `name`    | string    | the entity id  | Title shown in the card header.                                             |
 | `compact` | boolean   | `false`        | One-line mode: icon + name + brightness % + power toggle, no colour controls. |
 | `master`  | boolean   | auto-detected  | Force master (`true`) or segment (`false`) behaviour, overriding the auto-detection based on the entity name. |
+| `push`    | boolean   | `true`         | Set `false` to disable the direct WLED WebSocket (instant external updates) and rely on the 3 s poll instead — e.g. to spare WLED's limited WebSocket client slots. |
 
 ### Examples
 
@@ -225,12 +229,21 @@ doesn't follow the convention.
 - **Setup has moving parts.** The card isn't a drop-in — it needs the two Home
   Assistant scripts and the REST commands (above) installed and named as
   expected before it can talk to WLED.
-- **Colour changes made elsewhere can lag ~3 s.** Brightness and CCT changes
-  from other sources (the WLED app, another dashboard) show up almost instantly,
-  but a pure *colour* change is only picked up by a 3-second poll. This is
-  fundamental to the approach: the strip is kept in `color_temp` mode, so Home
-  Assistant never surfaces an `rgb` change on the entity, and only a direct
-  `/json/state` poll can catch it.
+- **On HTTPS dashboards, colour changes made elsewhere can lag ~3 s.** The card
+  subscribes directly to the strip's WebSocket (`ws://<ip>/ws`) so external
+  changes — including pure *colour* changes — normally appear within ~1 second.
+  But WLED only speaks plain `ws://`, which a browser refuses to open from an
+  **HTTPS** page (mixed content). So on HTTPS-served dashboards — Nabu Casa
+  remote access, most reverse-proxy setups — the card automatically falls back
+  to a 3-second poll for external colour changes. (Brightness and CCT changes
+  are instant everywhere: they surface on the HA entity, which the card watches
+  regardless.) Closing this gap fully would take a **custom integration** that
+  holds the WLED WebSocket connection server-side and re-broadcasts its frames
+  as Home Assistant events: the browser then receives the push over HA's own
+  authenticated WebSocket (`wss://`, so no mixed-content block), exactly how
+  native `local_push` integrations stay live through Nabu Casa. That's how every
+  standard integration works remotely — but it's a separate component to build,
+  install, and maintain, so this card keeps the poll fallback instead.
 - **WLED / RGBCCT specific.** The card assumes WLED's `/json/state` segment
   model and the `_segment_<n>` entity-naming convention. It isn't a general
   light card. It has only been tested on RGBCCT hardware (BTF-SPI FCOB RGBCCT
@@ -245,7 +258,7 @@ doesn't follow the convention.
 
 ## Future development
 
-Ideas under consideration (not commitments — contributions welcome):
+Ideas under consideration (not commitments):
 
 - A **visual config editor** (`getConfigElement` / `getStubConfig`) so cards can
   be added and edited from the UI without hand-writing YAML.
@@ -255,9 +268,14 @@ Ideas under consideration (not commitments — contributions welcome):
   WLED's per-segment colour model alongside its effects and saved presets.
 - **Easier install** — shipping the HA scripts as a reusable blueprint to shrink
   the setup steps.
-- A **push-based update path** — subscribing to WLED's live state so colour
-  changes made elsewhere appear immediately, removing the ~3 s poll (and its
-  latency) noted in the limitations above rather than just tuning it.
+- **Instant colour updates on HTTPS dashboards** — closing the ~3 s
+  remote-access gap noted in the limitations above. Two routes: a lightweight
+  opt-in "doorbell entity" (an MQTT sensor on WLED's `…/c` topic the card
+  watches), or a **custom integration** that holds the WLED WebSocket
+  server-side and re-broadcasts its frames as HA events, delivered to the card
+  over HA's own `wss://` connection — heavier to build and maintain, but the
+  same push mechanism native `local_push` integrations use to stay live through
+  Nabu Casa.
 
 ---
 
