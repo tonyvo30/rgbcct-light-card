@@ -37,6 +37,7 @@ from .const import (
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
     HTTP_TIMEOUT,
+    WS_HEARTBEAT,
     WS_RECONNECT_INITIAL,
     WS_RECONNECT_MAX,
 )
@@ -68,6 +69,10 @@ class RgbcctWledCoordinator(DataUpdateCoordinator[WledState]):
         self._session = async_get_clientsession(hass)
         self._push_enabled: bool = entry.options.get(CONF_PUSH, True)
         self._ws_task: asyncio.Task | None = None
+        # Push-channel health, tracked so failures are logged on transition
+        # rather than once per retry (or, as before, not visibly at all).
+        self._push_connected = False
+        self._push_failure_logged = False
 
     # -- HTTP ---------------------------------------------------------------
 
@@ -120,18 +125,30 @@ class RgbcctWledCoordinator(DataUpdateCoordinator[WledState]):
             self._ws_task = None
 
     async def _ws_loop(self) -> None:
-        """Hold the WLED websocket open, pushing each frame to the entities."""
+        """Hold the WLED websocket open, pushing each frame to the entities.
+
+        Push loss is reported at `warning` on the *transition*, not swallowed at
+        debug: the integration advertises `iot_class: local_push`, so a socket
+        that never connects leaves it quietly serving state up to a poll interval
+        stale while still looking healthy. Repeat failures drop to debug so a
+        long outage does not flood the log.
+        """
         delay = WS_RECONNECT_INITIAL
         url = f"ws://{self.host}/ws"
         while True:
             try:
                 # heartbeat= sends WS pings so a half-open socket is detected and
                 # torn down (the browser doorbell had to fake this by sending {}).
-                async with self._session.ws_connect(url, heartbeat=25) as socket:
-                    _LOGGER.debug("WLED websocket connected: %s", self.host)
+                async with self._session.ws_connect(url, heartbeat=WS_HEARTBEAT) as socket:
+                    if not self._push_connected:
+                        _LOGGER.info("WLED push websocket connected: %s", self.host)
+                    self._push_connected = True
+                    self._push_failure_logged = False
                     delay = WS_RECONNECT_INITIAL
                     async for message in socket:
                         if message.type is aiohttp.WSMsgType.TEXT:
+                            # Frame handling never raises (see _handle_frame), so
+                            # a parse bug cannot masquerade as a disconnect here.
                             self._handle_frame(message.data)
                         elif message.type in (
                             aiohttp.WSMsgType.ERROR,
@@ -143,16 +160,39 @@ class RgbcctWledCoordinator(DataUpdateCoordinator[WledState]):
             except asyncio.CancelledError:
                 raise
             except Exception as err:  # noqa: BLE001 - log and reconnect on anything
-                _LOGGER.debug("WLED websocket error for %s: %s", self.host, err)
+                self._report_push_lost(err)
+            else:
+                self._report_push_lost(None)
 
             await asyncio.sleep(delay)
             delay = min(delay * 2, WS_RECONNECT_MAX)
 
+    def _report_push_lost(self, err: Exception | None) -> None:
+        """Log a push-channel failure once per outage, then quietly."""
+        if not self._push_failure_logged:
+            _LOGGER.warning(
+                "WLED push websocket unavailable for %s (%s); falling back to "
+                "polling every %ss and retrying",
+                self.host,
+                err or "connection closed",
+                self.update_interval.total_seconds() if self.update_interval else "?",
+            )
+            self._push_failure_logged = True
+        else:
+            _LOGGER.debug("WLED websocket retry failed for %s: %s", self.host, err)
+        self._push_connected = False
+
     def _handle_frame(self, raw: str) -> None:
-        """Parse a websocket frame and push it as fresh coordinator data."""
+        """Parse a websocket frame and push it as fresh coordinator data.
+
+        Deliberately total — it must not raise. `_ws_loop` treats an exception as
+        a dead connection and reconnects, so a parse bug escaping here would be
+        indistinguishable from a network blip and would silently retry forever.
+        """
         try:
             payload = json.loads(raw)
         except ValueError:
+            _LOGGER.debug("Ignoring non-JSON WLED frame from %s", self.host)
             return
         if not isinstance(payload, dict):
             return
@@ -160,4 +200,18 @@ class RgbcctWledCoordinator(DataUpdateCoordinator[WledState]):
         # ack/info-only frames).
         if not any(key in payload for key in ("state", "seg", "on")):
             return
-        self.async_set_updated_data(parse_state(payload))
+
+        try:
+            state = parse_state(payload)
+        except Exception:  # noqa: BLE001 - a parse bug must not kill the socket
+            _LOGGER.exception("Malformed WLED frame from %s: %.200s", self.host, raw)
+            return
+
+        # A frame carrying no segments (e.g. a bare {"on": true} ack) would
+        # otherwise replace good data with an empty state, marking every entity
+        # unavailable and making group turn-off a no-op until the next poll.
+        if not state.segments:
+            _LOGGER.debug("Ignoring WLED frame with no segments from %s", self.host)
+            return
+
+        self.async_set_updated_data(state)

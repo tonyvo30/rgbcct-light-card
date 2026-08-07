@@ -23,5 +23,16 @@ DEFAULT_POLL_INTERVAL = 30
 WS_RECONNECT_INITIAL = 5
 WS_RECONNECT_MAX = 60
 
+# Seconds between aiohttp websocket pings. A half-open TCP connection can sit in
+# readyState OPEN for minutes after an ungraceful drop; the ping forces it to
+# surface so the reconnect loop (and the poll fallback) actually engage.
+WS_HEARTBEAT = 25
+
+# NOTE: constants used by the dependency-free leaf modules live *in* those modules
+# (`models.DEFAULT_CCT`, `payload.MASTER_BRIGHTNESS_FULL`), not here. Those modules
+# must import nothing from the package so they stay testable on a bare `pytest`
+# with no Home Assistant installed — importing `const` would break that, since a
+# relative import needs package context the tests deliberately avoid.
+
 # Per-request HTTP timeout (seconds) — matches the old get_wled_state rest_command.
 HTTP_TIMEOUT = 5

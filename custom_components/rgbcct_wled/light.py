@@ -29,7 +29,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .color import cold_warm_to_white_cct, white_cct_to_cold_warm
 from .const import DOMAIN
 from .coordinator import RgbcctWledCoordinator
-from .models import SegmentState, WledState
+from .models import DEFAULT_CCT, SegmentState, WledState
+from .payload import build_turn_off_payload, build_turn_on_payload
 
 if TYPE_CHECKING:
     from . import RgbcctWledConfigEntry
@@ -42,9 +43,9 @@ async def async_setup_entry(
 ) -> None:
     """Create the group light + one light per current segment."""
     coordinator = entry.runtime_data
-    entities: list[RgbcctWledLight] = [RgbcctWledLight(coordinator, seg_id=None)]
+    entities: list[RgbcctWledLight] = [RgbcctWledLight(coordinator, segment_id=None)]
     entities.extend(
-        RgbcctWledLight(coordinator, seg_id=segment.seg_id)
+        RgbcctWledLight(coordinator, segment_id=segment.segment_id)
         for segment in coordinator.data.segments
     )
     async_add_entities(entities)
@@ -57,18 +58,18 @@ class RgbcctWledLight(CoordinatorEntity[RgbcctWledCoordinator], LightEntity):
     _attr_supported_color_modes = {ColorMode.RGBWW}
     _attr_color_mode = ColorMode.RGBWW
 
-    def __init__(self, coordinator: RgbcctWledCoordinator, seg_id: int | None) -> None:
-        """seg_id None -> the whole-device group entity."""
+    def __init__(self, coordinator: RgbcctWledCoordinator, segment_id: int | None) -> None:
+        """segment_id None -> the whole-device group entity."""
         super().__init__(coordinator)
-        self._seg_id = seg_id
-        self._is_group = seg_id is None
+        self._segment_id = segment_id
+        self._is_group = segment_id is None
 
         if self._is_group:
             self._attr_name = None  # -> entity_id light.<device>
             self._attr_unique_id = f"{coordinator.mac}_group"
         else:
-            self._attr_name = f"Segment {seg_id}"  # -> light.<device>_segment_<n>
-            self._attr_unique_id = f"{coordinator.mac}_segment_{seg_id}"
+            self._attr_name = f"Segment {segment_id}"  # -> light.<device>_segment_<n>
+            self._attr_unique_id = f"{coordinator.mac}_segment_{segment_id}"
 
         self._attr_device_info = DeviceInfo(
             # identifiers (NOT connections={CONNECTION_NETWORK_MAC}) so this stays
@@ -91,7 +92,7 @@ class RgbcctWledLight(CoordinatorEntity[RgbcctWledCoordinator], LightEntity):
             return None
         if self._is_group:
             return state.segments[0]
-        return state.segment(self._seg_id)  # type: ignore[arg-type]
+        return state.segment(self._segment_id)  # type: ignore[arg-type]
 
     @property
     def available(self) -> bool:
@@ -117,7 +118,7 @@ class RgbcctWledLight(CoordinatorEntity[RgbcctWledCoordinator], LightEntity):
     def brightness(self) -> int | None:
         """Segment brightness (WLED seg.bri) — unscaled from the colour."""
         segment = self._segment
-        return segment.bri if segment is not None else None
+        return segment.brightness if segment is not None else None
 
     @property
     def rgbww_color(self) -> tuple[int, int, int, int, int] | None:
@@ -139,51 +140,43 @@ class RgbcctWledLight(CoordinatorEntity[RgbcctWledCoordinator], LightEntity):
         an attribute error would surface as a stack trace in the log.
         """
         if not self._is_group:
-            return [self._seg_id]  # type: ignore[list-item]
+            return [self._segment_id]  # type: ignore[list-item]
         state = self.coordinator.data
-        return [segment.seg_id for segment in state.segments] if state else []
+        return [segment.segment_id for segment in state.segments] if state else []
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Apply colour/brightness and power on.
+        """Apply whatever Home Assistant supplied, and power on.
 
-        Starts from the current segment values so a partial call (e.g. only
-        brightness) doesn't wipe colour. Turning on also powers the device on
-        (Pattern 5): a lit segment must have the device on to actually show, and
-        the group turns every segment on. All of this goes in one POST.
+        **Only the channels actually requested are written.** Reconstructing the
+        omitted ones from current state looks harmless but is not: for the group
+        `_segment` is segment 0, and the write fans out to *every* segment — so a
+        bare turn-on (a UI toggle, a scene, a voice command) would stamp segment
+        0's colour over all the others, destroying per-segment state on the
+        device. Anything not requested is left off the wire entirely.
+
+        Turning on also powers the device on (Pattern 5): a lit segment needs the
+        device on to actually show, and the group turns every segment on. It all
+        goes in one POST.
         """
-        segment = self._segment
-        red, green, blue = (segment.r, segment.g, segment.b) if segment else (255, 255, 255)
-        white, cct = (segment.w, segment.cct) if segment else (0, 127)
-        brightness = segment.bri if segment else 255
-
+        wled_color = None
         if ATTR_RGBWW_COLOR in kwargs:
             red, green, blue, cold_white, warm_white = kwargs[ATTR_RGBWW_COLOR]
-            white, cct = cold_warm_to_white_cct(cold_white, warm_white, cct)
-        if ATTR_BRIGHTNESS in kwargs:
-            brightness = kwargs[ATTR_BRIGHTNESS]
+            segment = self._segment
+            white, cct = cold_warm_to_white_cct(
+                cold_white, warm_white, segment.cct if segment else DEFAULT_CCT
+            )
+            wled_color = (red, green, blue, white, cct)
 
-        seg_payload = [
-            {
-                "id": seg_id,
-                "on": True,
-                "bri": brightness,
-                "col": [[red, green, blue, white]],
-                "cct": cct,
-            }
-            for seg_id in self._target_ids
-        ]
-        await self.coordinator.async_command({"on": True, "seg": seg_payload})
+        await self.coordinator.async_command(
+            build_turn_on_payload(
+                self._target_ids,
+                wled_color=wled_color,
+                brightness=kwargs.get(ATTR_BRIGHTNESS),
+            )
+        )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Power off.
-
-        The group clears device power and every segment's power. A single
-        segment only clears its own power (device and other segments untouched),
-        matching the original card's Pattern 5 behaviour.
-        """
-        if self._is_group:
-            await self.coordinator.async_command(
-                {"on": False, "seg": [{"id": seg_id, "on": False} for seg_id in self._target_ids]}
-            )
-        else:
-            await self.coordinator.async_command({"seg": [{"id": self._seg_id, "on": False}]})
+        """Power off (see `payload.build_turn_off_payload` for the group rule)."""
+        await self.coordinator.async_command(
+            build_turn_off_payload(self._target_ids, is_group=self._is_group)
+        )

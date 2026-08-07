@@ -17,7 +17,7 @@ def test_parse_basic_state():
     segment = state.segments[0]
     assert (segment.r, segment.g, segment.b, segment.w) == (10, 20, 30, 40)
     assert segment.cct == 100
-    assert segment.bri == 200
+    assert segment.brightness == 200
     assert segment.on is True
 
 
@@ -30,7 +30,7 @@ def test_parse_websocket_wrapper_and_defaults():
     segment = state.segments[0]
     assert (segment.r, segment.g, segment.b, segment.w) == (1, 2, 3, 0)
     assert segment.cct == 127
-    assert segment.bri == 255
+    assert segment.brightness == 255
 
 
 def test_inactive_segments_are_skipped():
@@ -41,7 +41,7 @@ def test_inactive_segments_are_skipped():
         ]
     }
     state = models.parse_state(payload)
-    assert [segment.seg_id for segment in state.segments] == [0]
+    assert [segment.segment_id for segment in state.segments] == [0]
 
 
 def test_segment_lookup():

@@ -10,6 +10,7 @@ already-configured device.
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import Any
 
 import aiohttp
@@ -27,6 +28,23 @@ from .const import (
     DOMAIN,
     HTTP_TIMEOUT,
 )
+
+
+# The host is interpolated straight into "http://{host}/json/state" and the
+# websocket URL, so it must be a bare host (optionally :port) and nothing else.
+# Without this, "10.0.0.5@evil.example" would parse as *userinfo* and silently
+# target evil.example, and "10.0.0.5/x?" would rewrite the path.
+_HOST_PATTERN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?(?::\d{1,5})?$")
+
+
+def host_is_valid(host: str) -> bool:
+    """True if `host` is a plain hostname/IPv4, optionally with a port.
+
+    Bracketed IPv6 is not accepted; WLED devices are reached by IPv4 or mDNS
+    name in practice, and allowing brackets here would widen the URL-injection
+    surface this check exists to close.
+    """
+    return bool(_HOST_PATTERN.match(host))
 
 
 async def _async_fetch_info(hass, host: str) -> dict:
@@ -65,11 +83,17 @@ class RgbcctWledConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             host = user_input[CONF_HOST].strip()
-            try:
-                info = await _async_fetch_info(self.hass, host)
-            except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
-                errors["base"] = "cannot_connect"
+            info: dict | None = None
+
+            if not host_is_valid(host):
+                errors["base"] = "invalid_host"
             else:
+                try:
+                    info = await _async_fetch_info(self.hass, host)
+                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+                    errors["base"] = "cannot_connect"
+
+            if info is not None:
                 mac = info.get("mac")
                 if not mac:
                     errors["base"] = "no_mac"
@@ -79,6 +103,7 @@ class RgbcctWledConfigFlow(ConfigFlow, domain=DOMAIN):
                     return self.async_create_entry(
                         title=info.get("name") or host, data=_entry_data(host, mac, info)
                     )
+
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema({vol.Required(CONF_HOST): str}),
@@ -88,6 +113,11 @@ class RgbcctWledConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_zeroconf(self, discovery_info: ZeroconfServiceInfo) -> ConfigFlowResult:
         """Handle `_wled._tcp` discovery."""
         host = discovery_info.host
+        # Discovery data is attacker-influenceable on a hostile LAN, and this flow
+        # can update an existing entry's host below — so it gets the same check as
+        # typed input rather than being trusted for coming from zeroconf.
+        if not host_is_valid(host):
+            return self.async_abort(reason="invalid_host")
         try:
             info = await _async_fetch_info(self.hass, host)
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
@@ -110,7 +140,10 @@ class RgbcctWledConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Confirm adding a discovered device."""
-        assert self._host is not None and self._mac is not None and self._info is not None
+        # An explicit guard, not `assert` — asserts are stripped under `python -O`,
+        # which would turn a lost flow context into an AttributeError instead.
+        if self._host is None or self._mac is None or self._info is None:
+            return self.async_abort(reason="cannot_connect")
         name = self._info.get("name") or self._host
         if user_input is not None:
             return self.async_create_entry(

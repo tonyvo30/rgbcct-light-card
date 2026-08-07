@@ -15,11 +15,13 @@
     },
     "error": {
       "cannot_connect": "Failed to connect. Check the host and that WLED is reachable.",
+      "invalid_host": "Enter a plain IP address or hostname, optionally with a port (for example 192.168.1.50 or wled-desk.local).",
       "no_mac": "The device did not report a MAC address."
     },
     "abort": {
       "already_configured": "This WLED device is already configured.",
       "cannot_connect": "Failed to connect to the discovered device.",
+      "invalid_host": "The discovered device advertised an unusable host address.",
       "no_mac": "The discovered device did not report a MAC address."
     }
   },

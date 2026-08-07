@@ -42,6 +42,13 @@ def cold_warm_to_white_cct(
     When both whites are zero the temperature is indeterminate, so the previous
     `cct` is preserved rather than snapping to an arbitrary value (mirrors how
     the card keeps hue when value is zero).
+
+    Home Assistant may legitimately ask for `cw + ww > 255` (e.g. an all-255
+    rgbww_color), which WLED's single 0-255 white channel cannot hold. The total
+    is capped at 255 while `cct` is derived from the **uncapped** ratio, so the
+    result is a proportional scale-down, not a clip: (200, 100) and (255, 255)
+    keep their 2:1 and 1:1 mixes. The UI reading back a smaller pair is the
+    device's real limit surfacing, not a rounding fault.
     """
     white = min(255, cold_white + warm_white)
     total = cold_white + warm_white
