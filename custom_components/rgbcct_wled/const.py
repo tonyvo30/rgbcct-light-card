@@ -36,3 +36,14 @@ WS_HEARTBEAT = 25
 
 # Per-request HTTP timeout (seconds) — matches the old get_wled_state rest_command.
 HTTP_TIMEOUT = 5
+
+# Minimum gap between POSTs to WLED. The first write of a burst goes out
+# immediately (so a single command stays responsive and its errors still surface
+# to the caller); anything arriving inside the window is merged and sent once when
+# it closes. This caps the device at ~7 writes/second no matter how fast the
+# frontend drives it — a colour-wheel drag would otherwise emit one POST per
+# pointer event. The ESP has little heap and destabilises under bursts
+# (integration-plan.md Risks), and unlike the old card's client-side 100ms send
+# debounce this limit is server-side, so it holds regardless of how many
+# dashboards, scripts or automations write at once.
+WRITE_MIN_INTERVAL = 0.15

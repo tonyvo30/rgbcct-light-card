@@ -77,6 +77,34 @@ def build_turn_on_payload(
     return body
 
 
+def merge_payloads(base: dict, incoming: dict) -> dict:
+    """Fold a newer POST body into an older one that has not been sent yet.
+
+    Used to coalesce a burst of writes into a single request. Later values win,
+    but segments are merged **per id** rather than replaced, because the bodies
+    built above are deliberately partial: a colour write carries only `col`/`cct`
+    and a brightness write only `bri`. Keeping just the newest body would silently
+    drop the colour — a rate limiter must not lose changes, only combine them.
+    """
+    merged = {key: value for key, value in base.items() if key != "seg"}
+    merged.update({key: value for key, value in incoming.items() if key != "seg"})
+
+    segments: dict[int, dict] = {}
+    order: list[int] = []
+    for source in (base, incoming):
+        for segment in source.get("seg", []):
+            segment_id = segment.get("id")
+            if segment_id in segments:
+                segments[segment_id].update(segment)
+            else:
+                segments[segment_id] = dict(segment)
+                order.append(segment_id)
+
+    if segments:
+        merged["seg"] = [segments[segment_id] for segment_id in order]
+    return merged
+
+
 def build_turn_off_payload(segment_ids: list[int], *, is_group: bool) -> dict:
     """Build the POST body for a turn-off.
 

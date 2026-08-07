@@ -37,11 +37,13 @@ from .const import (
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
     HTTP_TIMEOUT,
+    WRITE_MIN_INTERVAL,
     WS_HEARTBEAT,
     WS_RECONNECT_INITIAL,
     WS_RECONNECT_MAX,
 )
 from .models import WledState, parse_state
+from .payload import merge_payloads
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -74,6 +76,17 @@ class RgbcctWledCoordinator(DataUpdateCoordinator[WledState]):
         self._push_connected = False
         self._push_failure_logged = False
 
+        # Write rate limiting + the instrumentation that justifies it. The
+        # sent/requested totals are logged on every POST so the real coalescing
+        # ratio is observable rather than assumed (it was unmeasured when the
+        # amplification was first raised).
+        self._pending_write: dict | None = None
+        self._flush_task: asyncio.Task | None = None
+        self._last_write_at = -WRITE_MIN_INTERVAL  # first write is never throttled
+        self._writes_requested = 0
+        self._writes_sent = 0
+        self._requests_since_send = 0
+
     # -- HTTP ---------------------------------------------------------------
 
     async def _async_update_data(self) -> WledState:
@@ -88,14 +101,66 @@ class RgbcctWledCoordinator(DataUpdateCoordinator[WledState]):
         return parse_state(payload)
 
     async def async_command(self, payload: dict) -> None:
-        """POST a raw /json/state payload to WLED (the one write path).
+        """Queue a `/json/state` write, rate-limited and coalesced.
 
-        Callers (light.py) build the full payload — device `on` plus a `seg`
-        list — so a whole turn_on/turn_off, including power propagation, is a
-        single request (gentle on the ESP). A refresh is requested afterwards so
-        state still settles when push is disabled or the socket is momentarily
-        down; the websocket frame normally beats it.
+        Callers (light.py) build the whole body — device `on` plus a `seg` list —
+        so a turn_on/turn_off including power propagation is one request.
+
+        Bursts are the risk: the frontend can emit a write per pointer event
+        during a wheel drag, and the ESP destabilises under that. The first write
+        of a burst is sent **immediately** — so a lone command stays responsive
+        and its failure still raises to the caller — while anything arriving
+        inside `WRITE_MIN_INTERVAL` is merged into a single trailing POST. Merging
+        (not replacing) matters because the bodies are partial: see
+        `payload.merge_payloads`.
         """
+        self._writes_requested += 1
+        self._requests_since_send += 1
+
+        idle = self.hass.loop.time() - self._last_write_at >= WRITE_MIN_INTERVAL
+        if self._pending_write is None and idle:
+            await self._async_post(payload)
+            return
+
+        self._pending_write = (
+            merge_payloads(self._pending_write, payload)
+            if self._pending_write is not None
+            else payload
+        )
+        if self._flush_task is None or self._flush_task.done():
+            self._flush_task = self.entry.async_create_background_task(
+                self.hass, self._async_flush_writes(), f"{DOMAIN}_write_{self.host}"
+            )
+
+    async def _async_flush_writes(self) -> None:
+        """Send merged writes once the rate-limit window closes."""
+        while self._pending_write is not None:
+            delay = WRITE_MIN_INTERVAL - (self.hass.loop.time() - self._last_write_at)
+            if delay > 0:
+                await asyncio.sleep(delay)
+            payload = self._pending_write
+            self._pending_write = None
+            try:
+                await self._async_post(payload)
+            except HomeAssistantError as err:
+                # Nothing left to raise to — the service call that queued this
+                # returned when the burst started.
+                _LOGGER.error("Coalesced WLED write failed: %s", err)
+
+    async def _async_post(self, payload: dict) -> None:
+        """Actually send one body, and account for what it represents."""
+        self._last_write_at = self.hass.loop.time()
+        self._writes_sent += 1
+        coalesced = self._requests_since_send
+        self._requests_since_send = 0
+        _LOGGER.debug(
+            "WLED write to %s: %d request(s) in this POST (totals: %d sent / %d requested)",
+            self.host,
+            coalesced,
+            self._writes_sent,
+            self._writes_requested,
+        )
+
         try:
             async with asyncio.timeout(HTTP_TIMEOUT):
                 async with self._session.post(
@@ -104,7 +169,13 @@ class RgbcctWledCoordinator(DataUpdateCoordinator[WledState]):
                     resp.raise_for_status()
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
             raise HomeAssistantError(f"Failed to send to WLED at {self.host}: {err}") from err
-        await self.async_request_refresh()
+
+        # WLED broadcasts its full state on every change, so with the socket up
+        # the frame that is already on its way makes a read-back GET pure
+        # duplicate traffic — it doubled every write for no information. Only ask
+        # when there is no push channel to carry the answer.
+        if not self._push_connected:
+            await self.async_request_refresh()
 
     # -- Push websocket -----------------------------------------------------
 
@@ -117,12 +188,18 @@ class RgbcctWledCoordinator(DataUpdateCoordinator[WledState]):
         )
 
     async def async_stop(self) -> None:
-        """Cancel the push websocket task."""
-        if self._ws_task is not None:
-            self._ws_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._ws_task
-            self._ws_task = None
+        """Cancel the push websocket and drop any queued write."""
+        for task in (self._ws_task, self._flush_task):
+            if task is not None:
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+        self._ws_task = None
+        self._flush_task = None
+        # A write still queued at unload is deliberately discarded rather than
+        # flushed: the entry is going away, and a POST landing after teardown
+        # would apply state nothing is left to reflect.
+        self._pending_write = None
 
     async def _ws_loop(self) -> None:
         """Hold the WLED websocket open, pushing each frame to the entities.

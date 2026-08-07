@@ -7,6 +7,8 @@ colour — destroying per-segment state on the device, not merely mis-rendering 
 These assert on key *absence*, which is the property that matters.
 """
 
+import copy
+
 import payload
 import pytest
 
@@ -115,3 +117,78 @@ def test_segment_turn_off_leaves_device_power_alone():
 def test_payload_covers_exactly_the_given_targets(segment_ids):
     body = payload.build_turn_on_payload(segment_ids, is_group=True, brightness=10)
     assert [segment["id"] for segment in body["seg"]] == segment_ids
+
+
+# -- coalescing (W5 write amplification) -------------------------------------
+
+
+def test_merge_keeps_both_colour_and_brightness():
+    """The rate limiter must combine writes, never discard them.
+
+    Payloads are partial by design (the C1 fix), so a colour write followed by a
+    brightness write inside one window must produce a body carrying both. Naive
+    "keep the newest" coalescing would silently lose the colour.
+    """
+    colour = payload.build_turn_on_payload([0], is_group=True, wled_color=(1, 2, 3, 4, 90))
+    brightness = payload.build_turn_on_payload([0], is_group=True, brightness=200)
+
+    merged = payload.merge_payloads(colour, brightness)
+
+    segment = merged["seg"][0]
+    assert segment["col"] == [[1, 2, 3, 4]], "earlier colour must survive"
+    assert segment["cct"] == 90
+    assert segment["bri"] == 200, "later brightness must be applied"
+
+
+def test_merge_later_value_wins_for_the_same_key():
+    first = payload.build_turn_on_payload([0], is_group=True, brightness=10)
+    second = payload.build_turn_on_payload([0], is_group=True, brightness=250)
+
+    merged = payload.merge_payloads(first, second)
+    assert merged["seg"][0]["bri"] == 250
+
+
+def test_merge_combines_writes_to_different_segments():
+    """Two segment entities written in one window must both reach the device."""
+    first = payload.build_turn_on_payload([0], is_group=False, brightness=10)
+    second = payload.build_turn_on_payload([1], is_group=False, brightness=20)
+
+    merged = payload.merge_payloads(first, second)
+
+    assert [segment["id"] for segment in merged["seg"]] == [0, 1]
+    assert merged["seg"][0]["bri"] == 10
+    assert merged["seg"][1]["bri"] == 20
+
+
+def test_merge_turn_off_after_turn_on_wins():
+    """Last write wins for power, per segment and at device level."""
+    on = payload.build_turn_on_payload([0, 1], is_group=True)
+    off = payload.build_turn_off_payload([0, 1], is_group=True)
+
+    merged = payload.merge_payloads(on, off)
+
+    assert merged["on"] is False
+    assert all(segment["on"] is False for segment in merged["seg"])
+
+
+def test_merge_segment_off_does_not_clear_device_power():
+    """A segment turn-off merged after a group turn-on leaves the device on."""
+    group_on = payload.build_turn_on_payload([0, 1], is_group=True)
+    segment_off = payload.build_turn_off_payload([1], is_group=False)
+
+    merged = payload.merge_payloads(group_on, segment_off)
+
+    assert merged["on"] is True
+    assert merged["seg"][0]["on"] is True
+    assert merged["seg"][1]["on"] is False
+
+
+def test_merge_does_not_mutate_its_inputs():
+    """The caller keeps holding `base`; merging must not corrupt it."""
+    first = payload.build_turn_on_payload([0], is_group=True, brightness=10)
+    second = payload.build_turn_on_payload([0], is_group=True, brightness=99)
+    original = copy.deepcopy(first)
+
+    payload.merge_payloads(first, second)
+
+    assert first == original
