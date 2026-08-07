@@ -86,7 +86,17 @@ class RgbcctWledLight(CoordinatorEntity[RgbcctWledCoordinator], LightEntity):
 
     @property
     def _segment(self) -> SegmentState | None:
-        """The segment this entity reads from (the group reads segment 0)."""
+        """The segment this entity reads from.
+
+        **Contract (chosen, not incidental): the group reports segment 0.** When
+        segments hold different colours the group entity shows segment 0's and
+        gives no signal that the others differ — HA's light model has no "mixed"
+        concept to express it with (the card carried a Mixed badge for exactly
+        this, `src/mixins/segments.js`). Segment 0 is picked because it is stable
+        and is the segment WLED itself treats as primary; averaging would invent
+        a colour no segment actually shows, and reporting `None` would make the
+        group unusable in scenes and automations.
+        """
         state: WledState | None = self.coordinator.data
         if state is None or not state.segments:
             return None
@@ -116,7 +126,21 @@ class RgbcctWledLight(CoordinatorEntity[RgbcctWledCoordinator], LightEntity):
 
     @property
     def brightness(self) -> int | None:
-        """Segment brightness (WLED seg.bri) — unscaled from the colour."""
+        """Segment brightness (WLED seg.bri) — unscaled from the colour.
+
+        **Known limitation.** WLED's real output is `master_bri * seg.bri / 255`,
+        and this reports only `seg.bri`, so while the device master is below 255
+        the number overstates actual output (master 40% + seg 255 reads as 255 and
+        lights at 40%). A *group* turn-on pins the master to full and restores
+        truth; a *segment* turn-on deliberately leaves the master alone, because
+        writing a device-global from a segment entity is worse (see `payload.py`).
+
+        Reporting the true product instead was considered and rejected: a segment
+        could then never reach 255 while the master is low — `seg.bri` cannot
+        exceed 255 — so HA would set full and read back the capped value, snapping
+        the slider. The group entity is the device-wide control, so device-wide
+        state resetting there is the coherent contract.
+        """
         segment = self._segment
         return segment.brightness if segment is not None else None
 
@@ -170,6 +194,7 @@ class RgbcctWledLight(CoordinatorEntity[RgbcctWledCoordinator], LightEntity):
         await self.coordinator.async_command(
             build_turn_on_payload(
                 self._target_ids,
+                is_group=self._is_group,
                 wled_color=wled_color,
                 brightness=kwargs.get(ATTR_BRIGHTNESS),
             )
