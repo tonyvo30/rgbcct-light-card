@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"src/**/*.js\"",
-    "format:check": "prettier --check \"src/**/*.js\""
+    "format:check": "prettier --check \"src/**/*.js\"",
+    "deploy:integration": "node scripts/deploy-integration.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

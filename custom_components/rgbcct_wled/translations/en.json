@@ -1,0 +1,37 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add WLED device",
+        "description": "Enter the WLED host (IP address or hostname).",
+        "data": {
+          "host": "Host"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Add WLED device",
+        "description": "Do you want to add the WLED device {name}?"
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect. Check the host and that WLED is reachable.",
+      "no_mac": "The device did not report a MAC address."
+    },
+    "abort": {
+      "already_configured": "This WLED device is already configured.",
+      "cannot_connect": "Failed to connect to the discovered device.",
+      "no_mac": "The discovered device did not report a MAC address."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "RGBCCT WLED options",
+        "data": {
+          "push": "Enable push (websocket)",
+          "poll_interval": "Fallback poll interval (seconds)"
+        }
+      }
+    }
+  }
+}

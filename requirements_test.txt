@@ -1,0 +1,26 @@
+# Test dependencies for the rgbcct_wled integration.
+#
+#   python -m venv .venv
+#   .venv/Scripts/python -m pip install -r requirements_test.txt   # Windows
+#   .venv/bin/python     -m pip install -r requirements_test.txt   # Linux/macOS
+#   python -m pytest
+#
+# !! PYTHON VERSION MATTERS !!
+# Home Assistant pins a minimum Python per release, and the harness below
+# installs HA *as a library* to test against. Your interpreter therefore caps
+# which HA you can simulate:
+#     HA 2026.3+  requires Python >= 3.14.2
+#     HA 2025.5+  requires Python >= 3.13.2
+#     HA 2025.2+  requires Python >= 3.13.0
+#     Python 3.12 tops out at HA 2025.1.4
+# Match the interpreter to the HA release you actually run, or the tests will
+# validate against a version that behaves differently from your box. The
+# pure-logic tests below have no such constraint.
+#
+# pytest-homeassistant-custom-component pulls in Home Assistant itself plus the
+# test harness (the `hass`, `aioclient_mock`, `enable_custom_integrations`
+# fixtures, pytest-asyncio, etc.). Pin it to a version matching your target HA
+# release. The pure-logic tests (tests/test_color.py, tests/test_models.py) need
+# only `pytest` and run without this.
+pytest
+pytest-homeassistant-custom-component
