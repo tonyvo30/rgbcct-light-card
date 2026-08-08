@@ -37,9 +37,10 @@ export default [
     }
   },
 
-  // Build / tooling config files run under Node.
+  // Build / tooling config files and the dev scripts run under Node, not the
+  // browser — they need Node's globals (console, process, ...).
   {
-    files: ["*.config.js"],
+    files: ["*.config.js", "scripts/**/*.mjs"],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "module",

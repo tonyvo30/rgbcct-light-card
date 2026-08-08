@@ -20,6 +20,11 @@ from custom_components.rgbcct_wled.const import DOMAIN  # noqa: E402
 
 _INFO = {"mac": "aabbccddeeff", "name": "Desk WLED", "arch": "esp32", "ver": "0.14.0"}
 _FETCH = "custom_components.rgbcct_wled.config_flow._async_fetch_info"
+# A successful flow makes HA immediately set the entry up for real, which starts the
+# coordinator's poll + websocket against the fake host — a socket the harness blocks,
+# and a task still running at teardown ("Lingering task after test"). These are
+# config-flow tests, so stub setup out; the coordinator has its own tests.
+_SETUP = "custom_components.rgbcct_wled.async_setup_entry"
 
 
 async def test_user_flow_success(hass: HomeAssistant) -> None:
@@ -29,10 +34,11 @@ async def test_user_flow_success(hass: HomeAssistant) -> None:
     )
     assert result["type"] is FlowResultType.FORM
 
-    with patch(_FETCH, return_value=_INFO):
+    with patch(_FETCH, return_value=_INFO), patch(_SETUP, return_value=True):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], {"host": "1.2.3.4"}
         )
+        await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "Desk WLED"
