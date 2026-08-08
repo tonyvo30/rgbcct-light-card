@@ -290,6 +290,12 @@ Node 20+, Windows/macOS/Linux. Line endings are normalised to LF.
 | `npm run watch` | Dev build that rebuilds on every save. |
 | `npm run lint` / `lint:fix` | ESLint 9 (flat config). |
 | `npm run format` / `format:check` | Prettier, scoped to `src/**/*.js`. |
+| `npm run setup:python-env` | One-time: creates the Python test venv (needs Python ≥ 3.10). |
+| `npm run test:python` | Integration tests that need no Home Assistant. |
+| `npm run test:python:ha` | The full Python suite, in Docker. |
+
+The Python suite runs in two tiers, and the Home Assistant half is Docker-only —
+Home Assistant cannot be imported on Windows. See [`tests/README.md`](tests/README.md).
 
 **Rebuild `dist/` after every `src/` change** — Home Assistant loads the built
 bundle, not the source.

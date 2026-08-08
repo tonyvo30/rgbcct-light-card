@@ -1,31 +1,17 @@
 # syntax=docker/dockerfile:1
 
-# Runs the FULL Python test suite — the pure tier AND the HA-harness tier — on Linux.
+# Runs the FULL Python test suite — the pure tier AND the HA-harness tier — on Linux,
+# because Home Assistant cannot be imported on Windows. Rationale, and why this uses
+# COPY rather than a bind mount: tests/README.md
 #
-# WHY THIS EXISTS
-# Home Assistant cannot be imported on Windows: homeassistant/runner.py has a bare,
-# unguarded `import fcntl`, and fcntl is POSIX-only (CPython does not ship it on
-# Windows, because it wraps fcntl()/ioctl()/flock() syscalls Windows lacks). The
-# harness also registers a pytest11 entry point, so merely INSTALLING it makes
-# pytest import Home Assistant at startup and breaks even the HA-free tests.
-# So `npm run test:python` (Windows) runs the pure tier only, and this image runs
-# everything. See .claude/handoff.md, Open item 1.
-#
-# WHY COPY AND NOT A BIND MOUNT
-# A COPY gives a self-contained, reproducible image that works the same locally and
-# in CI. It is also the only option for some checkouts: this project is often cloned
-# inside a Home Assistant config directory so the built card is served from /local/,
-# and that directory is frequently a NETWORK SHARE — which Docker Desktop cannot
-# bind-mount (it shares local drives only). The trade-off is that a source edit
-# needs a rebuild, which the layer split below makes near-instant.
 # .dockerignore trims the build context to the four paths COPYed below; on a network
 # share that matters, because every file in the context is read over the wire.
 
-# The interpreter series must satisfy the `requires_python` of the harness pinned in
-# requirements_test.txt. You do not have to trust this comment: pip refuses to
-# install a release whose requires_python is unmet, so a mismatch fails the build
-# loudly on the next line. That is why the version is duplicated here and nowhere
-# else — this copy is checked automatically, a copy in a script would not be.
+# Must satisfy the `requires_python` of the harness pinned in requirements_test.txt.
+# You do not have to trust this comment: pip refuses to install a release whose
+# requires_python is unmet, so a mismatch fails the build loudly on the next line.
+# That is why the version is duplicated here and nowhere else — this copy is checked
+# automatically, a copy in a script would not be.
 ARG PYTHON_VERSION=3.14
 FROM python:${PYTHON_VERSION}-slim
 
