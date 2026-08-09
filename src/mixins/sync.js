@@ -15,7 +15,7 @@
 // white and temperature faithfully, so none of it is needed — see
 // .claude/integration-plan.md, Phase 2.
 
-import { coldWarmToWhiteCct } from '../color.js';
+import { coldWarmToWhiteCct, whiteCctToColdWarm } from '../color.js';
 
 export const syncMixin = {
   // Pull current values from the light entity's attributes.
@@ -48,9 +48,23 @@ export const syncMixin = {
       if (Array.isArray(attributes.rgbww_color)) {
         const [r, g, b, coldWhite, warmWhite] = attributes.rgbww_color;
         this.setRgb(r, g, b);
-        // Pass the current cct so an all-zero white pair leaves the slider
-        // alone instead of snapping it (see coldWarmToWhiteCct).
-        ({ w: this.w, cct: this.cct } = coldWarmToWhiteCct(coldWhite, warmWhite, this.cct));
+
+        // Adopt the whites only if the device is showing something the card is
+        // NOT already holding. The cold/warm pair carries temperature as a
+        // ratio, so decoding it back to (w, cct) loses precision at low white —
+        // enough to move the slider a sixth of its travel at white=3, and that
+        // drifted value is what the next edit writes back (see color.js).
+        //
+        // Re-encoding what the card holds and comparing is exact: an identical
+        // pair means the device agrees with the card and there is nothing to
+        // learn from decoding it. Only a genuine difference — someone changed
+        // the light elsewhere — is worth the lossy conversion.
+        const [heldCold, heldWarm] = whiteCctToColdWarm(this.w, this.cct);
+        if (heldCold !== coldWhite || heldWarm !== warmWhite) {
+          // Pass the current cct so an all-zero white pair leaves the slider
+          // alone instead of snapping it (see coldWarmToWhiteCct).
+          ({ w: this.w, cct: this.cct } = coldWarmToWhiteCct(coldWhite, warmWhite, this.cct));
+        }
       }
     }
 

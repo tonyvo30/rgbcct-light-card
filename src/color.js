@@ -110,11 +110,30 @@ export function wheelWhiteGradient() {
 // These mirror `white_cct_to_cold_warm` / `cold_warm_to_white_cct` in
 // custom_components/rgbcct_wled/color.py so both sides of the boundary agree.
 // The integration's copy is the authoritative one (it is what reaches the LEDs);
-// this copy exists so the card can write and read the same encoding. They can
-// differ by 1 in the recovered cct, because Python's round() breaks ties to even
-// and Math.round() breaks them upward — harmless, since a cct recovered from a
-// low white is approximate anyway (see the Python docstring) and this side only
-// drives a slider position.
+// this copy exists so the card can write and read the same encoding.
+//
+// **The round trip is LOSSY, and badly so at low white.** Temperature is carried
+// as the cold/warm ratio, so its resolution is the white level: the recovered
+// cct can be out by up to ~128/white. Measured through this pair:
+//
+//     white   1 -> cct 127 comes back as   0   (fully warm)
+//     white   3 -> cct 127 comes back as  85
+//     white   8 -> worst drift 16
+//     white 128 -> worst drift 1
+//
+// This is not cosmetic. `wled.js` feeds `card.cct` straight back to the device
+// on the next edit, so a drifted readback is a *write input* — raise white from
+// 0 to 3 at neutral and the CCT slider lurches a sixth of its travel toward
+// warm. The old script path kept `w` and `cct` independent and had no such loss,
+// so this is a regression introduced by the RGBWW encoding.
+//
+// The physics is unavoidable in that encoding; adopting the lossy value is not.
+// `sync.js` only adopts these whites when they differ from what the card already
+// holds — see the consistency check there.
+//
+// (Separately, and far smaller: this pair can differ from the Python one by 1,
+// because Python's round() breaks ties to even and Math.round() breaks them
+// upward.)
 
 export function whiteCctToColdWarm(w, cct) {
   return [Math.round((w * cct) / 255), Math.round((w * (255 - cct)) / 255)];
