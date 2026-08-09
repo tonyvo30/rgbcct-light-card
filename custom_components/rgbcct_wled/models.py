@@ -48,6 +48,26 @@ class WledState:
             None,
         )
 
+    def primary_segment(self) -> SegmentState | None:
+        """The segment the whole-device group entity reports its colour from.
+
+        **The first segment that is on**, falling back to the first segment when
+        none are. The group is "on" whenever *any* segment is lit, so reporting a
+        dark segment's stored colour would contradict its own power state — the
+        entity would say on/orange while the strip showed pink. WLED keeps a
+        segment's colour while it is off, so this is not a theoretical case.
+
+        Still a single real segment, deliberately: averaging would invent a colour
+        no segment is showing, and returning None would make the group unusable in
+        scenes and automations. When segments differ, the group shows one of them
+        and gives no signal that the others differ — Home Assistant's light model
+        has no "mixed" concept (the card carries a Mixed badge for exactly this,
+        `src/mixins/segments.js`).
+        """
+        if not self.segments:
+            return None
+        return next((segment for segment in self.segments if segment.on), self.segments[0])
+
 
 def _coerce_int(value: object, default: int) -> int:
     """Best-effort int() with a fallback (WLED fields are occasionally absent)."""

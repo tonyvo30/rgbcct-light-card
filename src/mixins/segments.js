@@ -1,98 +1,119 @@
 // Everything about the multi-segment / master-card behaviour, mixed into
-// the card's prototype: master detection, the read-only children list,
-// the "mixed segments" check, and on/off power (which the master
-// propagates across every segment). On/off is driven by the live HA
-// entity states — reliable and instant, unlike the lossy colour read-back.
-
-import { isSegmentEntity, baseEntity, segmentEntity } from '../entities.js';
+// the card's prototype: master detection, the read-only children list, and
+// the "mixed segments" check.
+//
+// HOW A CARD FINDS ITS DEVICE'S SEGMENTS
+// By device identity, via HA's entity registry (`hass.entities`), and by the
+// `segment_id` attribute the integration puts on each segment light.
+//
+// It used to match entity-id strings — siblings were "ids sharing my prefix and
+// containing _segment_". That looks reasonable and is silently wrong: HA derives
+// an entity id from the device's name *once*, at creation, and never revises it.
+// Assign the device to an area or rename it and the next segment created gets an
+// id on the new pattern while its siblings keep the old one, so the master stops
+// seeing part of its own device with no error anywhere. Found on hardware; see
+// `light.py`'s extra_state_attributes for the full account.
+//
+// On/off propagation used to live here too — the master flipped the group entity
+// *and* every segment entity, because WLED keeps per-segment power flags that a
+// group-level write would not clear. The integration does that fan-out
+// server-side now (`payload.build_turn_off_payload`), in one POST instead of
+// N service calls, so setPower just commands this card's own entity.
 
 export const segmentsMixin = {
-  // A card is a master (whole-device) card when its entity is the group
-  // entity (no "_segment_" suffix). Optional `master:` config overrides.
+  // A card is a master (whole-device) card when its own entity carries no
+  // `segment_id` — the group entity omits it. Optional `master:` config overrides.
+  //
+  // Attributes are unavailable until `hass` arrives, which is after the first
+  // render, so this reads as `true` on that first pass; `set hass` re-renders if
+  // the answer turns out to be false. Guessing master is the safer default: it
+  // renders a children section that the re-render removes, rather than omitting
+  // one a master needs.
   isMaster() {
-    return this.config.master ?? !isSegmentEntity(this.config.entity);
+    if (this.config.master !== undefined) return this.config.master;
+    return this._hass?.states?.[this.config.entity]?.attributes?.segment_id === undefined;
   },
 
-  // Are the fetched segments non-homogeneous? True if any segment's
-  // colour or brightness differs from segment 0 beyond a small tolerance
-  // (absorbs WLED/rounding jitter). Needs at least two segments to differ.
+  // This device's segments, in segment-number order. Each entry is what the
+  // children list and the mixed check need: { number, on, r, g, b, brightness }.
+  //
+  // Membership is the device this card's entity belongs to, so it survives every
+  // rename; `segment_id` marks which of that device's entities are segments (the
+  // group has none) and supplies the real ordering, since entity ids sort as text
+  // and would put "_segment_10" before "_segment_2".
+  //
+  // Colour comes from `rgbww_color`, whose cold/warm whites are deliberately
+  // ignored — the swatch shows the RGB the segment is displaying, and folding
+  // white into it would wash every swatch toward grey. `on` already accounts for
+  // device power: the integration reports a segment as on only when the device
+  // and the segment are both on (`light.py`), so there is nothing to combine here.
+  deviceSegments() {
+    const registry = this._hass?.entities || {};
+    const states = this._hass?.states || {};
+
+    const deviceId = registry[this.config.entity]?.device_id;
+    if (!deviceId) return [];
+
+    return Object.keys(registry)
+      .filter((entityId) => registry[entityId].device_id === deviceId)
+      .map((entityId) => states[entityId])
+      .filter((state) => typeof state?.attributes?.segment_id === 'number')
+      .map((state) => {
+        const [r = 0, g = 0, b = 0] = state.attributes.rgbww_color ?? [];
+        return {
+          number: state.attributes.segment_id,
+          on: state.state === 'on',
+          r,
+          g,
+          b,
+          brightness: state.attributes.brightness ?? 0,
+        };
+      })
+      .sort((left, right) => left.number - right.number);
+  },
+
+  // Are the segments non-homogeneous? True if any lit segment's colour or
+  // brightness differs from the first lit one beyond a small tolerance (absorbs
+  // WLED/rounding jitter).
+  //
+  // Only lit segments are compared. An off segment reports no colour attributes
+  // at all, so including it would read as black and flag every partly-off device
+  // as "Mixed" — which says nothing about whether the lit segments look alike.
   segmentsAreMixed() {
-    const segments = this._segments;
-    if (!Array.isArray(segments) || segments.length < 2) return false;
+    const lit = this.deviceSegments().filter((segment) => segment.on);
+    if (lit.length < 2) return false;
 
     const TOL = 4;
     const near = (a, b) => Math.abs((Number(a) || 0) - (Number(b) || 0)) <= TOL;
 
-    const first = segments[0];
+    const first = lit[0];
 
-    return segments.some(
+    return lit.some(
       (segment) =>
         !near(segment.r, first.r) ||
         !near(segment.g, first.g) ||
         !near(segment.b, first.b) ||
-        !near(segment.bri, first.bri),
+        !near(segment.brightness, first.brightness),
     );
   },
 
-  // The device's base (group) entity id — this card's entity with any
-  // "_segment_n" suffix stripped.
-  deviceBase() {
-    return baseEntity(this.config.entity);
-  },
-
-  // The HA entity ids for this device's segments (light.<base>_segment_n) —
-  // the segment entities that share this device's base.
-  segmentEntityIds() {
-    const base = this.deviceBase();
-    const states = this._hass?.states || {};
-    return Object.keys(states).filter(
-      (entityId) => isSegmentEntity(entityId) && baseEntity(entityId) === base,
-    );
-  },
-
-  // Is the device's master power on? Read from the group entity's state,
-  // which is reliable for on/off (only colour is lossy on the entity).
-  deviceOn() {
-    return this._hass?.states?.[this.deviceBase()]?.state === 'on';
-  },
-
-  // Is a given fetched segment lit? On/off is driven by the live HA
-  // entity states (reliable + instant), not the lossy colour read-back:
-  // a segment is lit only if the device master is on AND its own segment
-  // entity is on. Falls back to the get script's `on` flag, then to on,
-  // if that segment has no matching entity.
-  segmentIsOn(segment) {
-    if (segment == null) return false;
-    if (!this.deviceOn()) return false;
-
-    const entityState = this._hass?.states?.[segmentEntity(this.deviceBase(), segment.id)];
-    if (entityState) return entityState.state === 'on';
-
-    if (segment.on === undefined || segment.on === null) return true;
-    return Number(segment.on) > 0;
-  },
-
-  // Render the master's read-only children list (one row per segment:
-  // colour swatch + brightness %) from the last fetched seg[] data. An
-  // off segment reads as a hollow swatch and "Off" instead of a %.
+  // Render the master's read-only children list (one row per segment: colour
+  // swatch + brightness %). An off segment reads as a hollow swatch and "Off"
+  // instead of a %.
   updateChildren() {
     const list = this.childrenList;
     if (!list) return;
 
-    const segments = this._segments || [];
+    const segments = this.deviceSegments();
 
     list.innerHTML = segments
       .map((segment) => {
-        const on = this.segmentIsOn(segment);
-        const r = Number(segment.r) || 0;
-        const g = Number(segment.g) || 0;
-        const b = Number(segment.b) || 0;
-        const percent = Math.round(((Number(segment.bri) || 0) / 255) * 100);
+        const percent = Math.round((segment.brightness / 255) * 100);
         return `
-        <div class="child${on ? '' : ' off'}">
-          <span class="child-swatch" style="background: ${on ? `rgb(${r}, ${g}, ${b})` : 'transparent'}"></span>
-          <span class="child-name">Segment ${segment.id}</span>
-          <span class="child-bri">${on ? percent + '%' : 'Off'}</span>
+        <div class="child${segment.on ? '' : ' off'}">
+          <span class="child-swatch" style="background: ${segment.on ? `rgb(${segment.r}, ${segment.g}, ${segment.b})` : 'transparent'}"></span>
+          <span class="child-name">Segment ${segment.number}</span>
+          <span class="child-bri">${segment.on ? percent + '%' : 'Off'}</span>
         </div>
       `;
       })
@@ -119,67 +140,32 @@ export const segmentsMixin = {
     }
   },
 
-  // Turn the light on/off via the standard HA light service (the WLED
-  // integration handles it). On/off is a reliable entity state, so
-  // unlike colour it doesn't go through the send-wled script.
+  // Turn this card's light on/off via the standard HA light service.
   //
-  // The master takes precedence over each child: it flips the group entity
-  // AND every segment entity, so an individually-off child comes on with
-  // the master (and vice-versa). Turning only the group's top-level power
-  // wouldn't relight a segment whose own on-flag is off — WLED keeps those
-  // per-segment flags — which is why the children didn't follow before.
+  // One entity, whichever card this is: the integration expands a group command
+  // to the device plus every segment, and powers the device on when a single
+  // segment is turned on (so it actually lights) while leaving the device alone
+  // when one is turned off (its siblings may still be lit). See payload.py.
   setPower(on) {
     if (!this._hass) return;
 
-    let targets;
+    this._hass.callService('light', on ? 'turn_on' : 'turn_off', {
+      entity_id: this.config.entity,
+    });
 
-    if (this.isMaster()) {
-      // Master drives the whole group + every segment.
-      targets = [this.config.entity, ...this.segmentEntityIds()];
-    } else if (on) {
-      // Turning a single segment ON also turns the device (group) on, so
-      // the segment actually lights (WLED won't light a segment while the
-      // master power is off) and the master reflects "any segment on".
-      // Turning a segment OFF leaves the group alone — other segments may
-      // still be on, so the device must stay powered.
-      targets = [this.config.entity, this.deviceBase()];
-    } else {
-      targets = [this.config.entity];
-    }
-
-    this._hass.callService('light', on ? 'turn_on' : 'turn_off', { entity_id: targets });
-
-    // No optimistic state to stash: on/off is reliable on the HA entities,
-    // so the imminent state_changed push (handled in `set hass`) refreshes
-    // the toggle + children with the device's true power within a moment.
+    // No optimistic state to stash: the imminent state_changed push (handled in
+    // `set hass`) refreshes the toggle + children with the device's true power.
   },
 
-  // Reflect the live on/off state on the toggle. For a master card the
-  // rule is "on if ANY segment is lit": off whenever the device master is
-  // off (so turning the master off always sticks), otherwise on if any
-  // segment entity is on. All read from HA entity states, which are
-  // reliable for on/off — unlike colour, on/off isn't lossy, so this
-  // isn't gated by _stateIsOwned and never fights the get-script fetch.
-  // Segment/child cards just use their own entity state.
+  // Reflect the live on/off state on the toggle. The group entity is on when the
+  // device is on and any segment is lit, so master and segment cards read the
+  // same way — that "any segment lit" rule now lives in the integration
+  // (`light.py`) instead of being recomputed here from N entity states.
   syncToggle() {
     const toggle = this.toggle;
 
     if (!toggle || toggle === document.activeElement) return;
 
-    if (this.isMaster()) {
-      if (!this.deviceOn()) {
-        toggle.checked = false;
-        return;
-      }
-      const segmentIds = this.segmentEntityIds();
-      toggle.checked = segmentIds.length
-        ? segmentIds.some((id) => this._hass.states[id]?.state === 'on')
-        : true;
-      return;
-    }
-
-    const state = this._hass?.states?.[this.config.entity];
-
-    toggle.checked = state?.state === 'on';
+    toggle.checked = this._hass?.states?.[this.config.entity]?.state === 'on';
   },
 };

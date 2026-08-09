@@ -65,10 +65,10 @@ export const uiMixin = {
     this.updateSliderTracks();
     this.updateColorPicker();
 
+    // Both read live entity state rather than this card's working state, so
+    // they belong to every refresh — including one triggered by a local edit,
+    // which can change which segments are lit.
     this.updateChildren();
-
-    // A fresh fetch can change which segments are lit; keep the toggle
-    // (master = any segment on) in step with it, not just with hass pushes.
     this.syncToggle();
   },
 

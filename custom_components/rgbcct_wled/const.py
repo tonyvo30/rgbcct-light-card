@@ -9,9 +9,10 @@ CONF_HOST = "host"
 CONF_POLL_INTERVAL = "poll_interval"
 CONF_PUSH = "push"
 
-# The card's entity-naming convention (src/entities.js) is preserved: the
-# whole-device "group" light has no suffix and reads/writes across all real
-# segments (0..N-1); each segment light is "..._segment_<n>".
+# N segments on a device produce N+1 entities: a whole-device "group" light that
+# reads/writes across all real segments (0..N-1), plus one light per segment.
+# Entity *ids* follow from the entity names, but nothing depends on their shape —
+# a segment is identified by its `segment_id` attribute (see light.py).
 
 # Fallback HTTP poll cadence when the push websocket is down (or disabled).
 # Gentle by default — the ESP has little heap and the websocket carries the

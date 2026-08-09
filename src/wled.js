@@ -1,26 +1,22 @@
-// The HA script this card calls to push colour/brightness/cct to WLED.
-const SEND_SCRIPT = 'script.send_wled_with_cct';
+// The card's write path: a standard `light.turn_on` against the rgbcct_wled
+// integration's entity.
+//
+// This used to call the "send wled with cct" HA script, which resolved the
+// entity to an IP and POSTed to WLED itself — a workaround for the fact that no
+// single HA light entity could carry colour and temperature together. The
+// integration's RGBWW entity can, so the card writes through the normal light
+// service like any other client, and the entity->device mapping, rate limiting
+// and per-segment fan-out all live server-side.
+
+import { whiteCctToColdWarm } from './color.js';
 
 export async function updateWLED(card) {
-  // The entity->ip (and its segments) mapping lives in the
-  // Home Assistant script "send wled with cct". We hand it the
-  // entity and colour values; HA resolves the device.
-  //
-  // Called via script.turn_on + variables (rather than the
-  // dedicated script.send_wled_with_cct service) so the script's
-  // `entity_id` field is passed as a variable and not swallowed
-  // by Home Assistant's reserved entity_id target key.
-
-  await card.hass.callService('script', 'turn_on', {
-    entity_id: SEND_SCRIPT,
-    variables: {
-      entity_id: card.config.entity,
-      bri: card.bri,
-      r: card.r,
-      g: card.g,
-      b: card.b,
-      w: card.w,
-      cct: card.cct,
-    },
+  // Colour and brightness go in one call so the integration can coalesce them
+  // into a single POST to the device (see payload.py: a colour write and a
+  // brightness write carry different keys and are merged per segment).
+  await card.hass.callService('light', 'turn_on', {
+    entity_id: card.config.entity,
+    rgbww_color: [card.r, card.g, card.b, ...whiteCctToColdWarm(card.w, card.cct)],
+    brightness: card.bri,
   });
 }

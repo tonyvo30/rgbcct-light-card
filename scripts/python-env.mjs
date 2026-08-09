@@ -1,6 +1,6 @@
 // Owns ONE convention: where the HA-free (T1) Python test environment lives.
 // Imported by setup-python-env.mjs and test-python.mjs so the location is defined
-// in exactly one place (cf. entities.js owning the `_segment_` naming rule).
+// in exactly one place.
 //
 // SCOPE: this environment runs the HA-free tier only. The HA-harness tier runs in
 // a Linux container — see Dockerfile.test — because Home Assistant cannot be

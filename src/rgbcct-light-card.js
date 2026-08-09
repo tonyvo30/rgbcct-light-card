@@ -6,30 +6,17 @@ import { hsvToRgb, rgbToHsv, satToRadius, SAT_FULL_RADIUS } from './color.js';
 import { syncMixin } from './mixins/sync.js';
 import { segmentsMixin } from './mixins/segments.js';
 import { uiMixin } from './mixins/ui.js';
-import { wledPushIsLive } from './wled-socket.js';
 
-// While the doorbell socket is live it delivers external changes instantly,
-// so the poll only re-reads once the last fetch is this stale — a safety
-// net, not a sync path. With the socket down, every 3s tick refetches.
-const SOCKET_LIVE_POLL_MS = 60000;
-
-// The custom element itself: lifecycle (setConfig / hass / connect), the
-// working colour state (HSV <-> r/g/b), and sending to WLED. The bulkier
-// concerns live in mixins merged onto the prototype at the bottom:
-//   - mixins/sync.js      device-state fetch, entity-change triggers, persistence
+// The custom element itself: lifecycle (setConfig / hass), the working colour
+// state (HSV <-> r/g/b), and sending to WLED. The bulkier concerns live in
+// mixins merged onto the prototype at the bottom:
+//   - mixins/sync.js      reading the entity's attributes into card state
 //   - mixins/segments.js  master/segment detection, children list, on/off power
 //   - mixins/ui.js        the DOM update methods
 class RGBCCTLightCard extends HTMLElement {
   setConfig(config) {
     if (!config.entity) {
       throw new Error('You must define an entity');
-    }
-
-    // A re-point to a different entity (card-editor preview) must shed the
-    // old device's socket and sync state first, or the card keeps listening
-    // to the wrong strip.
-    if (this.config && this.config.entity !== config.entity) {
-      this.resetDeviceSync();
     }
 
     this.config = config;
@@ -50,108 +37,58 @@ class RGBCCTLightCard extends HTMLElement {
     // handle can sit anywhere in the fully-saturated outer band.
     this.satR = this.satR ?? satToRadius(this.s);
 
-    // The HA entity can't faithfully report the multi-channel state we
-    // write raw to WLED, so on load we restore the last state this card
-    // sent. If found, the card owns its state and won't be overwritten
-    // by the (lossy) entity read-back.
-    this.restoreState();
+    // No localStorage restore: the entity now reports the device's true state
+    // and `hass.states` is already populated when the card is configured, so
+    // there is no gap for a remembered value to cover. Restoring one would be
+    // worse than useless — the old code marked such state as card-owned, which
+    // suppressed the entity read entirely.
 
     this.applyHsv();
 
     this.render();
 
-    if (this._hass) {
-      this.fetchStateOnce();
-      this.syncFromState();
-    }
+    if (this._hass) this.syncFromState();
   }
 
   set hass(hass) {
     this._hass = hass;
 
-    if (this.config) {
-      this.fetchStateOnce();
-      this.syncFromState();
-      this.syncToggle();
-      // On/off lives on the (reliable) entities, so refresh the children's
-      // lit/off state on every push — syncFromState early-returns once the
-      // card owns its colour state and wouldn't otherwise re-render them.
-      this.updateChildren();
-      this.syncOnEntityChange();
-    }
+    // Every device change arrives here: HA pushes the updated entity to all
+    // connected frontends, so this is the card's only sync path. syncFromState
+    // ends in updateUI(), which refreshes the toggle and the master's children
+    // list too — including while the interaction guards are holding, so those
+    // stay live during a drag.
+    if (!this.config) return;
+
+    // Master-ness comes from an entity attribute (see isMaster), which does not
+    // exist yet at setConfig time — HA sets `hass` after it. Re-render once if
+    // the first pass got it wrong; the layouts differ by the children section.
+    if (this._renderedAsMaster !== this.isMaster()) this.render();
+
+    this.syncFromState();
   }
 
   get hass() {
     return this._hass;
   }
 
-  connectedCallback() {
-    // Tiered poll of the true /json/state. Colour never surfaces on the
-    // (color_temp-mode) entity, so whenever the doorbell socket is
-    // unavailable (HTTPS page, WLED rebooting, host unresolved) this tick
-    // is the only thing that catches an external colour change. It's a
-    // standing check, not a mode switch: no live socket -> the original 3s
-    // cadence resumes on its own. Guarded and throttled like the triggers.
-    clearInterval(this._pollTimer);
-    this._pollTimer = setInterval(() => {
-      if (!this._hass || !this.config) return;
-      if (this._wheelActive || Date.now() < (this._holdUntil || 0)) return;
-      // A suppressed doorbell/trigger (guards were active when it fired)
-      // overrides the live-socket tier: the frame already came and won't
-      // repeat, so this tick is its retry.
-      if (
-        !this._refetchSuppressed &&
-        this._wledHost &&
-        wledPushIsLive(this._wledHost) &&
-        Date.now() - (this._lastFetchAt || 0) < SOCKET_LIVE_POLL_MS
-      ) {
-        return;
-      }
-      this.refetchThrottled();
-    }, 3000);
-
-    // Covers DOM re-attach (dashboard switches): the host is cached, so
-    // rejoining the shared socket is instant. The very first subscription
-    // happens in fetchStateOnce(), once _hass exists.
-    this.ensureWledPushSubscription();
-
-    // A hidden tab doesn't need instant push, but its socket still holds
-    // one of WLED's few WS client slots (and ESP heap) — release it, and
-    // rejoin + catch up when the tab becomes visible again.
-    this._onVisibilityChange = () => {
-      if (document.hidden) {
-        this._unsubscribeWledPush?.();
-        this._unsubscribeWledPush = null;
-      } else {
-        this.ensureWledPushSubscription();
-        this.refetchThrottled();
-      }
-    };
-    document.addEventListener('visibilitychange', this._onVisibilityChange);
-  }
-
+  // No connectedCallback: there is nothing to start. State arrives via
+  // `set hass`, which HA calls on attach and on every subsequent change — the
+  // poll timer, the direct WLED socket and the visibilitychange handler that
+  // released it all went with the doorbell.
   disconnectedCallback() {
-    clearInterval(this._pollTimer);
-    this._pollTimer = null;
-    if (this._onVisibilityChange) {
-      document.removeEventListener('visibilitychange', this._onVisibilityChange);
-      this._onVisibilityChange = null;
-    }
-    // Leave the shared doorbell socket; the last card out closes it.
-    this._unsubscribeWledPush?.();
-    this._unsubscribeWledPush = null;
-    clearTimeout(this._doorbellJitterTimer);
-    this._doorbellJitterTimer = null;
-    clearTimeout(this._refetchTimer);
-    this._refetchTimer = null;
-    // Also cancel a pending send-debounce, so a card removed within the
-    // 100ms window after an edit doesn't fire updateWLED() from a
-    // detached element (updateWLED only checks _hass, which is still set).
+    // Cancel a pending send-debounce, so a card removed within the 100ms window
+    // after an edit doesn't fire updateWLED() from a detached element
+    // (updateWLED only checks _hass, which is still set).
     clearTimeout(this._sendTimer);
     this._sendTimer = null;
   }
 
   render() {
+    // Remember which layout was built, so `set hass` can tell when the answer
+    // has changed and this needs redoing.
+    this._renderedAsMaster = this.isMaster();
+
     renderCard(this);
 
     addStyles(this);
@@ -200,12 +137,10 @@ class RGBCCTLightCard extends HTMLElement {
 
   // Debounced so dragging a slider doesn't spam the service.
   send() {
-    // The card now owns its state; remember it so a refresh restores it,
-    // and hold off entity->UI sync briefly so a background HA update
-    // doesn't overwrite what the user is setting.
-    this._stateIsOwned = true;
+    // Hold off entity->UI sync briefly: the write has to reach WLED and come
+    // back through the coordinator, and an intervening push still carries the
+    // pre-edit state, which would snap the control the user just moved.
     this._holdUntil = Date.now() + 2000;
-    this.persistState();
 
     clearTimeout(this._sendTimer);
 
@@ -215,10 +150,9 @@ class RGBCCTLightCard extends HTMLElement {
   async updateWLED() {
     if (!this._hass) return;
 
-    // Re-derive r/g/b from the wheel's HSV state right before
-    // sending, so the payload handed to the "send wled with cct"
-    // script always carries the current colour — never a stale
-    // r/g/b from a code path that forgot to call applyHsv().
+    // Re-derive r/g/b from the wheel's HSV state right before sending, so the
+    // service call always carries the current colour — never a stale r/g/b
+    // from a code path that forgot to call applyHsv().
     this.applyHsv();
 
     await updateWLED(this);

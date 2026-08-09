@@ -306,7 +306,8 @@ Vite into an IIFE bundle. Source layout:
 - `src/rgbcct-light-card.js` — the custom element: lifecycle, colour state, send.
 - `src/mixins/` — prototype mixins (`sync`, `segments`, `ui`) merged onto the class.
 - `src/render.js`, `events.js`, `styles.js`, `wled.js` — per-lifecycle `fn(card)` modules.
-- `src/color.js`, `entities.js` — pure helpers (colour math, entity-naming).
+- `src/color.js` — pure helpers (colour maths, and the white/cct ↔ cold/warm
+  conversion shared with the integration).
 
 ---
 

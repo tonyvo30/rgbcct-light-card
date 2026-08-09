@@ -1,7 +1,7 @@
 """RGBWW light entities for a WLED device.
 
-One entity per WLED segment plus a whole-device "group" entity, matching the
-card's N segments -> N+1 entities convention (`src/entities.js`). Each is a
+One entity per WLED segment plus a whole-device "group" entity — the card's
+N segments -> N+1 convention. Each is a
 standard `ColorMode.RGBWW` light, so Home Assistant itself (scenes, voice,
 automations, the native light card) can drive colour + temperature — the
 custom card is just one more client.
@@ -88,20 +88,21 @@ class RgbcctWledLight(CoordinatorEntity[RgbcctWledCoordinator], LightEntity):
     def _segment(self) -> SegmentState | None:
         """The segment this entity reads from.
 
-        **Contract (chosen, not incidental): the group reports segment 0.** When
-        segments hold different colours the group entity shows segment 0's and
-        gives no signal that the others differ — HA's light model has no "mixed"
-        concept to express it with (the card carried a Mixed badge for exactly
-        this, `src/mixins/segments.js`). Segment 0 is picked because it is stable
-        and is the segment WLED itself treats as primary; averaging would invent
-        a colour no segment actually shows, and reporting `None` would make the
-        group unusable in scenes and automations.
+        **Contract (chosen, not incidental): the group reports the first *lit*
+        segment** — see `WledState.primary_segment`, which owns that rule so it
+        can be tested without Home Assistant.
+
+        This used to be segment 0 unconditionally, which contradicted `is_on`:
+        the group is on when *any* segment is lit, so with segment 0 off and
+        segment 1 pink the entity reported on + segment 0's stored orange, and
+        every consumer (this card's master swatch, HA's own light card, scenes)
+        showed a colour nothing on the strip was displaying. Found on hardware.
         """
         state: WledState | None = self.coordinator.data
         if state is None or not state.segments:
             return None
         if self._is_group:
-            return state.segments[0]
+            return state.primary_segment()
         return state.segment(self._segment_id)  # type: ignore[arg-type]
 
     @property
@@ -143,6 +144,27 @@ class RgbcctWledLight(CoordinatorEntity[RgbcctWledCoordinator], LightEntity):
         """
         segment = self._segment
         return segment.brightness if segment is not None else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Expose which WLED segment this entity drives.
+
+        Deliberately absent on the group entity, so "has a `segment_id`" is the
+        test for being a segment. The card uses it for exactly that, and to
+        label/order the master's children list.
+
+        This exists because **entity ids cannot carry that information
+        reliably.** Home Assistant derives an id from the device's name once, at
+        creation, and never revises it — so assigning the device to an area, or
+        renaming it, leaves earlier siblings on the old pattern and newer ones on
+        the new one. A card matching `<group_id>_segment_<n>` then silently stops
+        seeing some of its own segments (found on hardware: a device moved to an
+        area gained `light.bedroom_wled_…_segment_2` alongside two pre-existing
+        `light.wled_…_segment_<n>` entities).
+        """
+        if self._is_group:
+            return None
+        return {"segment_id": self._segment_id}
 
     @property
     def rgbww_color(self) -> tuple[int, int, int, int, int] | None:

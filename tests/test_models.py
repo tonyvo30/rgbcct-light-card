@@ -33,6 +33,32 @@ def test_parse_websocket_wrapper_and_defaults():
     assert segment.brightness == 255
 
 
+def _segment(segment_id, *, on, r):
+    return models.SegmentState(
+        segment_id=segment_id, on=on, r=r, g=0, b=0, w=0, cct=127, brightness=255
+    )
+
+
+def test_primary_segment_prefers_the_first_lit_one():
+    # Regression (found on hardware): with segment 0 off the group entity reported
+    # segment 0's stored colour, so it showed "on" in one segment's colour while
+    # actually displaying another's. WLED keeps a segment's colour while it is off.
+    state = models.WledState(on=True, segments=[_segment(0, on=False, r=255), _segment(1, on=True, r=10)])
+    assert state.primary_segment().segment_id == 1
+
+    state = models.WledState(on=True, segments=[_segment(0, on=True, r=255), _segment(1, on=True, r=10)])
+    assert state.primary_segment().segment_id == 0
+
+
+def test_primary_segment_falls_back_when_nothing_is_lit():
+    # No segment is a truthful answer, but None would make the group unusable in
+    # scenes; the first segment keeps the reading stable and deterministic.
+    state = models.WledState(on=False, segments=[_segment(0, on=False, r=255), _segment(1, on=False, r=10)])
+    assert state.primary_segment().segment_id == 0
+
+    assert models.WledState(on=False, segments=[]).primary_segment() is None
+
+
 def test_inactive_segments_are_skipped():
     payload = {
         "seg": [
