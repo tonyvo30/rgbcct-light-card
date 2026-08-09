@@ -118,6 +118,13 @@ class RGBCCTLightCard extends HTMLElement {
     clearTimeout(this._sendTimer);
     this._sendTimer = null;
 
+    // Drop the channels that write had accumulated, or they outlive it. HA
+    // detaches cards on a view switch, so: edit colour, get detached inside the
+    // debounce, come back, nudge brightness — and the brightness write would
+    // inherit `color` and repaint every segment of a master. Exactly the
+    // behaviour send()-by-channel exists to prevent, through a narrower door.
+    this._pendingChannels = null;
+
     if (this._releaseWheel) {
       document.removeEventListener('pointerup', this._releaseWheel);
       document.removeEventListener('pointercancel', this._releaseWheel);
