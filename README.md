@@ -1,7 +1,7 @@
 # rgbcct-light-card
 
 A custom Home Assistant Lovelace card for
-controlling **WLED-based RGBCCT** LED strips — RGB colour *and* tunable white
+controlling **WLED-based RGBCCT** LED strips — RGB colour _and_ tunable white
 (CCT) on the same strip — with a proper colour wheel instead of the stock
 light dialog.
 
@@ -14,12 +14,13 @@ light dialog.
   propagates across every segment.
 - **Compact mode**: a one-line icon + name + brightness + toggle.
 
-All reads and writes go through two Home Assistant scripts, so **no device IPs
-are hardcoded or mapped anywhere** and there are no CORS issues — Home Assistant
-makes the HTTP requests server-side. On HTTP-served dashboards the card also
-listens to the strip's own WebSocket (host auto-resolved from HA's device
-registry) so changes made elsewhere — the WLED app, another dashboard — appear
-within about a second.
+The card is paired with a small custom integration, **`rgbcct_wled`**, which
+holds the connection to the strip server-side and exposes each segment as a
+standard RGBWW light. So **no device IPs are hardcoded or mapped anywhere**,
+there are no CORS issues, and the card itself makes no network calls at all — it
+calls `light.turn_on` and reads entity state like any other Lovelace card.
+Changes made elsewhere (the WLED app, another dashboard) appear within about a
+second, on HTTP and HTTPS alike.
 
 ---
 
@@ -47,10 +48,12 @@ an RGBCCT strip independently. From the integration's own documentation:
 > Home Assistant. When such strips are used, only one color temperature or hue is
 > active at a time.
 
-This card works around that limitation: it writes the full multi-channel state
-(RGB + white + CCT) to WLED in a single write via the helper scripts — so RGB
-and CCT are active at the same time — while still surfacing as a normal Lovelace
-card.
+This project works around that limitation by modelling each segment as an
+**RGBWW** light, a colour mode that carries red, green, blue, cold-white and
+warm-white together — so colour temperature rides the cold/warm ratio and RGB
+stays independent of it. One write sets the whole multi-channel state, and
+because it is a normal light entity, Home Assistant's own dialogs, scenes and
+voice control drive it too. The card is just one client of it.
 
 This is also my first AI-assisted project: the implementation, the refactoring,
 and this documentation were developed collaboratively with
@@ -60,8 +63,8 @@ Anthropic's Claude.
 
 ## Requirements
 
-- Home Assistant with the **WLED integration** set up (each strip appears as a
-  device with a `configuration_url`, from which the scripts derive its IP).
+- Home Assistant, with the **`rgbcct_wled` integration** from this repo
+  installed and configured (its config flow asks for the strip's host).
 - A WLED strip configured for **RGBCCT** output.
 - Node.js 20+ to build the card bundle.
 
@@ -119,7 +122,19 @@ The bundle logs its version to the browser console on load
 > the card, hard-refresh the dashboard (or bump the resource's `?v=` query) to
 > clear the browser cache.
 
-### 3. Install the two Home Assistant scripts
+### 3. ~~Install the two Home Assistant scripts~~ — NO LONGER NEEDED
+
+> **This whole section is obsolete and is kept only until the docs are
+> rewritten.** The card no longer calls either script. It now talks to the
+> `rgbcct_wled` custom integration through the standard `light.turn_on` service,
+> and reads state from the integration's entities. Installing the scripts and
+> REST commands does nothing; if you already have them, they are simply unused.
+>
+> Setup is now: install the integration, add your WLED device through its config
+> flow (it asks for the host), and point the card at the entities it creates.
+
+<details>
+<summary>Obsolete script setup (pre-integration)</summary>
 
 The card writes to and reads from WLED via two HA scripts plus a pair of REST
 commands. All three are in the [`HA Scripts/`](HA%20Scripts/) folder.
@@ -133,10 +148,10 @@ Assistant. These do the actual `POST`/`GET` to WLED's `/json/state`.
 **Settings ▸ Automations & Scenes ▸ Scripts ▸ Add Script ▸ Edit in YAML**, and
 paste in:
 
-| File | What it does |
-| --- | --- |
+| File                                                                               | What it does                                                                    |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | [`HA Scripts/send wled with cct.yaml`](HA%20Scripts/send%20wled%20with%20cct.yaml) | Writes colour / brightness / white / CCT to WLED (`script.send_wled_with_cct`). |
-| [`HA Scripts/get wled with cct.yaml`](HA%20Scripts/get%20wled%20with%20cct.yaml) | Reads WLED's true live state back for the card (`get_wled_with_cct`). |
+| [`HA Scripts/get wled with cct.yaml`](HA%20Scripts/get%20wled%20with%20cct.yaml)   | Reads WLED's true live state back for the card (`get_wled_with_cct`).           |
 
 Both scripts parse the target **segment** from the entity's `_segment_<n>`
 suffix (the bare group entity is treated as segment `-1`, i.e. segment 0), and
@@ -146,6 +161,8 @@ no entity→IP map to maintain.
 > **Note:** after editing the `get` script, reload it in HA (or restart) so its
 > per-segment `on` output is available. The card has a safe fallback if it
 > isn't, but the master's segment on/off list is most accurate once it's live.
+
+</details>
 
 ---
 
@@ -161,13 +178,13 @@ name: Living Room
 
 ### Options
 
-| Option    | Type      | Default        | Description                                                                 |
-| --------- | --------- | -------------- | --------------------------------------------------------------------------- |
-| `entity`  | string    | **required**   | The WLED light entity. A whole-device entity makes a **master** card; a `_segment_<n>` entity makes a **segment** card. |
-| `name`    | string    | the entity id  | Title shown in the card header.                                             |
-| `compact` | boolean   | `false`        | One-line mode: icon + name + brightness % + power toggle, no colour controls. |
-| `master`  | boolean   | auto-detected  | Force master (`true`) or segment (`false`) behaviour, overriding the auto-detection based on the entity name. |
-| `push`    | boolean   | `true`         | Set `false` to disable the direct WLED WebSocket (instant external updates) and rely on the 3 s poll instead — e.g. to spare WLED's limited WebSocket client slots. |
+| Option     | Type        | Default       | Description                                                                                                                                                                   |
+| ---------- | ----------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `entity`   | string      | **required**  | The WLED light entity. The whole-device (group) entity makes a **master** card; a per-segment entity makes a **segment** card.                                                |
+| `name`     | string      | the entity id | Title shown in the card header.                                                                                                                                               |
+| `compact`  | boolean     | `false`       | One-line mode: icon + name + brightness % + power toggle, no colour controls.                                                                                                 |
+| `master`   | boolean     | auto-detected | Force master (`true`) or segment (`false`) behaviour. Auto-detection reads the entity's `segment_id` attribute, not its name.                                                 |
+| ~~`push`~~ | ~~boolean~~ | —             | **Removed.** It disabled the card's direct WLED WebSocket, which no longer exists — the card gets pushed updates through Home Assistant instead. Setting it now does nothing. |
 
 ### Examples
 
@@ -203,8 +220,14 @@ A WLED strip with **N segments** surfaces **N + 1** Home Assistant entities:
 
 - the **group** entity for the whole device — no suffix, e.g.
   `light.living_room_wled`
-- one **segment** entity per segment, suffixed `_segment_<n>`, e.g.
-  `light.living_room_wled_segment_0`, `..._segment_1`, …
+- one **segment** entity per segment, named "Segment _n_" — which usually gives
+  ids like `light.living_room_wled_segment_0`, `..._segment_1`, …
+
+Those ids are only a naming _default_, not a contract: Home Assistant fixes an
+entity id when the entity is first created, so renaming the device or moving it
+to an area leaves older siblings on the old pattern. The card therefore matches
+segments by device and by their `segment_id` attribute, never by id shape — you
+can rename any of these freely.
 
 A card whose `entity` is the **group** entity is a **master** card:
 
@@ -229,26 +252,19 @@ doesn't follow the convention.
 - **Setup has moving parts.** The card isn't a drop-in — it needs the two Home
   Assistant scripts and the REST commands (above) installed and named as
   expected before it can talk to WLED.
-- **On HTTPS dashboards, colour changes made elsewhere can lag ~3 s.** The card
-  subscribes directly to the strip's WebSocket (`ws://<ip>/ws`) so external
-  changes — including pure *colour* changes — normally appear within ~1 second.
-  But WLED only speaks plain `ws://`, which a browser refuses to open from an
-  **HTTPS** page (mixed content). So on HTTPS-served dashboards — Nabu Casa
-  remote access, most reverse-proxy setups — the card automatically falls back
-  to a 3-second poll for external colour changes. (Brightness and CCT changes
-  are instant everywhere: they surface on the HA entity, which the card watches
-  regardless.) Closing this gap fully would take a **custom integration** that
-  holds the WLED WebSocket connection server-side and re-broadcasts its frames
-  as Home Assistant events: the browser then receives the push over HA's own
-  authenticated WebSocket (`wss://`, so no mixed-content block), exactly how
-  native `local_push` integrations stay live through Nabu Casa. That's how every
-  standard integration works remotely — but it's a separate component to build,
-  install, and maintain, so this card keeps the poll fallback instead.
+- ~~**On HTTPS dashboards, colour changes made elsewhere can lag ~3 s.**~~
+  **Resolved.** This was the card's central limitation: WLED speaks only plain
+  `ws://`, which a browser refuses to open from an HTTPS page (mixed content),
+  so remote dashboards fell back to a 3-second poll. The `rgbcct_wled`
+  integration — the one this section used to describe as hypothetical — now
+  holds the WLED connection server-side, and the browser gets updates over Home
+  Assistant's own authenticated WebSocket. The card makes no network calls of
+  its own at all, so HTTP and HTTPS behave identically.
 - **WLED / RGBCCT specific.** The card assumes WLED's `/json/state` segment
-  model and the `_segment_<n>` entity-naming convention. It isn't a general
-  light card. It has only been tested on RGBCCT hardware (BTF-SPI FCOB RGBCCT
-  strip); behaviour on RGB-only, RGBW, or plain PWM strips is unknown.
-- **The master's segment list is read-only.** From a master card you can *see*
+  model and the entities the `rgbcct_wled` integration creates from it. It isn't
+  a general light card. It has only been tested on RGBCCT hardware (BTF-SPI FCOB
+  RGBCCT strip); behaviour on RGB-only, RGBW, or plain PWM strips is unknown.
+- **The master's segment list is read-only.** From a master card you can _see_
   each segment's colour and brightness, but not edit an individual segment —
   use a per-segment card (`entity: ..._segment_<n>`) to control one directly.
 - **YAML configuration only.** There's no visual (GUI) card editor yet; cards
@@ -266,16 +282,13 @@ Ideas under consideration (not commitments):
   per-segment controls.
 - **Secondary / tertiary colours, effects, and presets** — surfacing more of
   WLED's per-segment colour model alongside its effects and saved presets.
-- **Easier install** — shipping the HA scripts as a reusable blueprint to shrink
-  the setup steps.
-- **Instant colour updates on HTTPS dashboards** — closing the ~3 s
-  remote-access gap noted in the limitations above. Two routes: a lightweight
-  opt-in "doorbell entity" (an MQTT sensor on WLED's `…/c` topic the card
-  watches), or a **custom integration** that holds the WLED WebSocket
-  server-side and re-broadcasts its frames as HA events, delivered to the card
-  over HA's own `wss://` connection — heavier to build and maintain, but the
-  same push mechanism native `local_push` integrations use to stay live through
-  Nabu Casa.
+- **Opening Home Assistant's more-info dialog** from the card, for the entity
+  settings native cards expose (name, icon, area, labels, visibility).
+- ~~**Easier install** — shipping the HA scripts as a reusable blueprint.~~
+  **Done differently:** the scripts are gone entirely, replaced by the
+  `rgbcct_wled` integration and its config flow.
+- ~~**Instant colour updates on HTTPS dashboards.**~~ **Done** — the custom
+  integration this entry proposed is built; see the limitations above.
 
 ---
 
@@ -283,16 +296,16 @@ Ideas under consideration (not commitments):
 
 Node 20+, Windows/macOS/Linux. Line endings are normalised to LF.
 
-| Command | What it does |
-| --- | --- |
-| `npm run build` | Production build → `dist/rgbcct-light-card.js` (minified, no sourcemap). |
-| `npm run build:dev` | Same bundle **with a sourcemap**, for debugging live in HA devtools against `src/`. |
-| `npm run watch` | Dev build that rebuilds on every save. |
-| `npm run lint` / `lint:fix` | ESLint 9 (flat config). |
-| `npm run format` / `format:check` | Prettier, scoped to `src/**/*.js`. |
-| `npm run setup:python-env` | One-time: creates the Python test venv (needs Python ≥ 3.10). |
-| `npm run test:python` | Integration tests that need no Home Assistant. |
-| `npm run test:python:ha` | The full Python suite, in Docker. |
+| Command                           | What it does                                                                        |
+| --------------------------------- | ----------------------------------------------------------------------------------- |
+| `npm run build`                   | Production build → `dist/rgbcct-light-card.js` (minified, no sourcemap).            |
+| `npm run build:dev`               | Same bundle **with a sourcemap**, for debugging live in HA devtools against `src/`. |
+| `npm run watch`                   | Dev build that rebuilds on every save.                                              |
+| `npm run lint` / `lint:fix`       | ESLint 9 (flat config).                                                             |
+| `npm run format` / `format:check` | Prettier, scoped to `src/**/*.js`.                                                  |
+| `npm run setup:python-env`        | One-time: creates the Python test venv (needs Python ≥ 3.10).                       |
+| `npm run test:python`             | Integration tests that need no Home Assistant.                                      |
+| `npm run test:python:ha`          | The full Python suite, in Docker.                                                   |
 
 The Python suite runs in two tiers, and the Home Assistant half is Docker-only —
 Home Assistant cannot be imported on Windows. See [`tests/README.md`](tests/README.md).
