@@ -87,12 +87,29 @@ class RGBCCTLightCard extends HTMLElement {
     // (updateWLED only checks _hass, which is still set).
     clearTimeout(this._sendTimer);
     this._sendTimer = null;
+
+    // The wheel's release handler lives on the document (see events.js), so it
+    // outlives the element and has to be taken down explicitly.
+    if (this.releaseWheel) {
+      document.removeEventListener('pointerup', this.releaseWheel);
+      document.removeEventListener('pointercancel', this.releaseWheel);
+    }
   }
 
   render() {
     // Remember which layout was built, so `set hass` can tell when the answer
     // has changed and this needs redoing.
     this._renderedAsMaster = this.isMaster();
+
+    // The element the user had grabbed is about to be destroyed, so end any
+    // drag in progress. Belt-and-braces with the document-bound release in
+    // events.js: a live `_wheelActive` against a fresh wheel makes hovering
+    // write to the device.
+    //
+    // `_holdUntil` deliberately survives. It is a timestamp that expires on its
+    // own, nothing needs to clear it, and clearing it here would let the next
+    // push snap back the control the user just moved.
+    this._wheelActive = false;
 
     renderCard(this);
 

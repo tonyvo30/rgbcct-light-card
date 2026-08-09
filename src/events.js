@@ -107,12 +107,25 @@ function setupWheel(card) {
     if (card._wheelActive) pick(event);
   });
 
-  const release = () => {
+  // Release is bound to the DOCUMENT, not the wheel.
+  //
+  // `set hass` can re-render mid-drag, and renderCard() replaces innerHTML — so
+  // a listener on the wheel dies with the element it was watching, taking the
+  // only thing that clears `_wheelActive` with it. The flag would then stay true
+  // forever, and the consequences escalate: syncFromState stops adopting entity
+  // state, and the *replacement* wheel's pointermove — which checks only that
+  // flag — starts picking colours and writing to the device on mere hover.
+  //
+  // The document survives any re-render, and also catches a pointerup released
+  // outside the wheel. setupEvents runs again on every render, so drop the
+  // previous registration first or they accumulate one per render.
+  card.releaseWheel ??= () => {
     card._wheelActive = false;
   };
-
-  wheel.addEventListener('pointerup', release);
-  wheel.addEventListener('pointercancel', release);
+  document.removeEventListener('pointerup', card.releaseWheel);
+  document.removeEventListener('pointercancel', card.releaseWheel);
+  document.addEventListener('pointerup', card.releaseWheel);
+  document.addEventListener('pointercancel', card.releaseWheel);
 }
 
 // The Value slider (0-255) scales the colour's HSV value, dimming
