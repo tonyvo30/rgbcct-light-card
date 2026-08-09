@@ -52,19 +52,6 @@ export const segmentsMixin = {
     return this._isMaster ?? false;
   },
 
-  // This device's segments, in segment-number order. Each entry is what the
-  // children list and the mixed check need: { number, on, r, g, b, brightness }.
-  //
-  // Membership is the device this card's entity belongs to, so it survives every
-  // rename; `segment_id` marks which of that device's entities are segments (the
-  // group has none) and supplies the real ordering, since entity ids sort as text
-  // and would put "_segment_10" before "_segment_2".
-  //
-  // Colour comes from `rgbww_color`, whose cold/warm whites are deliberately
-  // ignored — the swatch shows the RGB the segment is displaying, and folding
-  // white into it would wash every swatch toward grey. `on` already accounts for
-  // device power: the integration reports a segment as on only when the device
-  // and the segment are both on (`light.py`), so there is nothing to combine here.
   // Entity ids belonging to this card's device. Scanning the registry means
   // touching every entity in the instance, and `set hass` fires on every state
   // change ANYWHERE — so this is cached against the registry object itself.
@@ -72,6 +59,18 @@ export const segmentsMixin = {
   // (entities added, removed, renamed), not on state changes, so an identity
   // check invalidates exactly when the answer could have moved.
   deviceEntityIds() {
+    // Everything here depends on the frontend's entity registry. If a future
+    // Home Assistant changes its shape, or an older one lacks it, the honest
+    // outcome is "no segments" — say so once rather than presenting an empty
+    // children list as though the device had none.
+    if (this._hass && !this._hass.entities && !this._warnedAboutRegistry) {
+      this._warnedAboutRegistry = true;
+      console.warn(
+        "rgbcct-light-card: hass.entities is unavailable, so this device's segments " +
+          'cannot be discovered. The master card will show an empty Segments list.',
+      );
+    }
+
     const registry = this._hass?.entities || {};
 
     if (this._deviceEntityIdsFrom === registry) return this._deviceEntityIds;
@@ -87,6 +86,20 @@ export const segmentsMixin = {
     return entityIds;
   },
 
+  // This device's segments, in segment-number order. Each entry is what the
+  // children list and the mixed check need: { number, available, on, r, g, b,
+  // brightness }.
+  //
+  // Membership is the device this card's entity belongs to, so it survives every
+  // rename; `segment_id` marks which of that device's entities are segments (the
+  // group has none) and supplies the real ordering, since entity ids sort as text
+  // and would put "_segment_10" before "_segment_2".
+  //
+  // Colour comes from `rgbww_color`, whose cold/warm whites are deliberately
+  // ignored — the swatch shows the RGB the segment is displaying, and folding
+  // white into it would wash every swatch toward grey. `on` already accounts for
+  // device power: the integration reports a segment as on only when the device
+  // and the segment are both on (`light.py`), so there is nothing to combine here.
   deviceSegments() {
     // Cached per `hass` object: one refresh asks for this twice (the mixed check
     // and the children list), and both want the same answer.

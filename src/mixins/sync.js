@@ -22,7 +22,14 @@ export const syncMixin = {
   syncFromState() {
     const state = this._hass?.states?.[this.config.entity];
 
-    if (!state) return;
+    // No state: a mistyped entity, one that has been removed, or one that has
+    // not loaded yet. There is nothing to adopt, but still fall through to the
+    // redraw — this is the card's only refresh path, and a master whose own
+    // entity is missing can still have live segment entities to list.
+    if (!state) {
+      this.updateUI();
+      return;
+    }
 
     // Don't fight the user: a push that lands mid-drag, or inside the short
     // hold window after an edit, would snap the controls back to the value the

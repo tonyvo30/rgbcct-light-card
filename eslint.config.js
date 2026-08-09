@@ -32,7 +32,11 @@ export default [
       eqeqeq: ["error", "smart"],
       "no-var": "error",
       "prefer-const": "error",
-      "no-console": ["warn", { allow: ["info"] }],
+      // `info` is the version banner; `warn` is for telling the user something
+      // is genuinely degraded (e.g. the entity registry being unavailable, which
+      // would otherwise look like a device with no segments). Everything else —
+      // log/debug/error left over from debugging — still gets flagged.
+      "no-console": ["warn", { allow: ["info", "warn"] }],
       "no-else-return": "error"
     }
   },
