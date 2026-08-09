@@ -146,11 +146,18 @@ class RgbcctWledLight(CoordinatorEntity[RgbcctWledCoordinator], LightEntity):
 
     @property
     def capability_attributes(self) -> dict[str, Any]:
-        """Static entity metadata, plus which WLED segment this entity drives.
+        """Static entity metadata, plus what this entity drives.
 
-        Deliberately absent on the group entity, so "has a `segment_id`" is the
-        test for being a segment. The card uses it for exactly that, and to
-        label/order the master's children list.
+        Every entity says positively which kind it is: a segment carries
+        `segment_id`, the group carries `is_group`. Never rely on one of them
+        being *absent* to infer the other — an absence cannot be distinguished
+        from an entity that has not loaded, and the card guessing "group" from a
+        missing attribute is how a segment card ends up with device-wide writes.
+        (`is_group` was added after exactly that: a master card created while the
+        device was unreachable had no way to know it was a master, so it rendered
+        as a segment with no children list.)
+
+        `segment_id` also labels and orders the master's children list.
 
         **Why this and not `extra_state_attributes`.** Home Assistant merges
         `extra_state_attributes` into a state only while the entity is
@@ -171,7 +178,9 @@ class RgbcctWledLight(CoordinatorEntity[RgbcctWledCoordinator], LightEntity):
         two pre-existing `light.wled_…_segment_<n>` entities).
         """
         attributes = dict(super().capability_attributes or {})
-        if not self._is_group:
+        if self._is_group:
+            attributes["is_group"] = True
+        else:
             attributes["segment_id"] = self._segment_id
         return attributes
 

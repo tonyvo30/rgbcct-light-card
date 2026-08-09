@@ -24,29 +24,28 @@ export const segmentsMixin = {
   // A card is a master (whole-device) card when its own entity carries no
   // `segment_id` — the group entity omits it. Optional `master:` config overrides.
   //
-  // **Resolved once, then cached, and it fails closed.** Master-ness follows
-  // from which entity the user configured, so it is fixed for the life of that
-  // config and must not be re-derived from live state. Two rules make that safe:
+  // **Decided by a positive marker, resolved once, then cached.**
   //
-  //   1. Only a state that is present and not `unavailable` may decide it. An
-  //      absent or unavailable entity leaves the question open rather than
-  //      answering it — "no segment_id" from a dropout is not evidence of being
-  //      a group. (`segment_id` is a capability attribute now, so it survives
-  //      unavailability anyway; this guard also covers entities that predate
-  //      that change, or that never load at all.)
-  //   2. Until something answers it, the answer is *segment*, not master. This
-  //      is the one asymmetry that matters: a master's writes and its power
-  //      toggle are device-wide, so guessing master hands a card a blast radius
-  //      the user never configured. Guessing segment merely under-renders, and
-  //      the first good state corrects it via the re-render in `set hass`.
+  // Both answers are assertions the integration makes: a segment entity carries
+  // `segment_id`, the group carries `is_group` (`light.py`). Neither is inferred
+  // from the other being missing, which matters because a missing attribute has
+  // three causes — segment, group, or "not loaded" — and an absence test cannot
+  // tell them apart. Reading "no segment_id" as *master* handed unloaded cards a
+  // device-wide blast radius; reading it as *segment* left a real master with no
+  // children list whenever it was created while the device was unreachable.
+  // Both attributes are capability attributes, so they survive a dropout.
+  //
+  // Cached because master-ness follows from which entity the user configured: it
+  // is fixed for the life of that config and must not track live state. If
+  // neither marker is present the question stays open, and the fallback is
+  // *segment* — the narrower capability — until an answer arrives.
   isMaster() {
     if (this.config.master !== undefined) return this.config.master;
 
     if (this._isMaster === undefined) {
-      const state = this._hass?.states?.[this.config.entity];
-      if (state && state.state !== 'unavailable') {
-        this._isMaster = state.attributes?.segment_id === undefined;
-      }
+      const attributes = this._hass?.states?.[this.config.entity]?.attributes;
+      if (typeof attributes?.segment_id === 'number') this._isMaster = false;
+      else if (attributes?.is_group === true) this._isMaster = true;
     }
 
     return this._isMaster ?? false;
