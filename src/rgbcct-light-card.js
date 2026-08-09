@@ -136,7 +136,16 @@ class RGBCCTLightCard extends HTMLElement {
   }
 
   // Debounced so dragging a slider doesn't spam the service.
-  send() {
+  //
+  // `channel` is what the user actually edited (see wled.js). Channels
+  // ACCUMULATE until a write goes out rather than resetting per call: the
+  // debounce below deliberately swallows the intervening calls, so grabbing the
+  // wheel within 100ms of nudging brightness must send both, not just the last.
+  // Same hazard the coordinator's merge-don't-replace coalescing exists for.
+  send(channel) {
+    this._pendingChannels ??= new Set();
+    this._pendingChannels.add(channel);
+
     // Hold off entity->UI sync briefly: the write has to reach WLED and come
     // back through the coordinator, and an intervening push still carries the
     // pre-edit state, which would snap the control the user just moved.
@@ -150,12 +159,19 @@ class RGBCCTLightCard extends HTMLElement {
   async updateWLED() {
     if (!this._hass) return;
 
+    // Claim the pending set before awaiting, so an edit made during the service
+    // call is recorded for the next write instead of being cleared with this one.
+    const channels = this._pendingChannels ?? new Set();
+    this._pendingChannels = new Set();
+
+    if (channels.size === 0) return;
+
     // Re-derive r/g/b from the wheel's HSV state right before sending, so the
     // service call always carries the current colour — never a stale r/g/b
     // from a code path that forgot to call applyHsv().
     this.applyHsv();
 
-    await updateWLED(this);
+    await updateWLED(this, channels);
   }
 
   toggleCompact() {

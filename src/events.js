@@ -1,4 +1,5 @@
 import { radiusToSat } from './color.js';
+import { BRIGHTNESS_CHANNEL, COLOR_CHANNEL } from './wled.js';
 
 export function setupEvents(card) {
   if (card.compact) {
@@ -22,19 +23,24 @@ export function setupEvents(card) {
     return;
   }
 
-  const bind = (input, property) => {
+  const bind = (input, property, channel) => {
     if (!input) return;
 
     input.oninput = () => {
       card[property] = Number(input.value);
       card.updateReadouts();
-      card.send();
+      card.send(channel);
     };
   };
 
-  bind(card.brightness, 'bri');
-  bind(card.white, 'w');
-  bind(card.cctInput, 'cct');
+  // White and CCT are COLOUR edits, not channels of their own: the two encode
+  // jointly into `rgbww_color`'s cold/warm pair, so neither can be written
+  // without the other. Brightness is genuinely separate — and must stay that
+  // way, since on a master it is the one slider that should not repaint the
+  // whole strip.
+  bind(card.brightness, 'bri', BRIGHTNESS_CHANNEL);
+  bind(card.white, 'w', COLOR_CHANNEL);
+  bind(card.cctInput, 'cct', COLOR_CHANNEL);
 
   // Header on/off switch (mirrors the compact view's toggle). The header
   // itself isn't clickable, so no stopPropagation is needed here.
@@ -88,7 +94,7 @@ function setupWheel(card) {
     card.applyHsv();
     card.updateReadouts();
     card.updateWheel();
-    card.send();
+    card.send(COLOR_CHANNEL);
   };
 
   wheel.addEventListener('pointerdown', (event) => {
@@ -121,7 +127,7 @@ function setupValue(card) {
     card.applyHsv();
     card.updateReadouts();
     card.updateWheel();
-    card.send();
+    card.send(COLOR_CHANNEL);
   };
 }
 
@@ -151,6 +157,6 @@ function setupColorInput(card) {
     // instead of appearing stuck at the previous value.
     card.setRgb(r, g, b);
     card.updateUI();
-    card.send();
+    card.send(COLOR_CHANNEL);
   };
 }
