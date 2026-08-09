@@ -1,10 +1,9 @@
 """RGBWW light entities for a WLED device.
 
 One entity per WLED segment plus a whole-device "group" entity — the card's
-N segments -> N+1 convention. Each is a
-standard `ColorMode.RGBWW` light, so Home Assistant itself (scenes, voice,
-automations, the native light card) can drive colour + temperature — the
-custom card is just one more client.
+N segments -> N+1 convention. Each is a standard `ColorMode.RGBWW` light, so
+Home Assistant itself (scenes, voice, automations, the native light card) can
+drive colour + temperature — the custom card is just one more client.
 
 Colour temperature rides the cold/warm-white channels (`color.py`); the write
 path converts back to WLED's `w`+`cct` so the on-the-wire payload is unchanged
@@ -204,11 +203,16 @@ class RgbcctWledLight(CoordinatorEntity[RgbcctWledCoordinator], LightEntity):
         """Apply whatever Home Assistant supplied, and power on.
 
         **Only the channels actually requested are written.** Reconstructing the
-        omitted ones from current state looks harmless but is not: for the group
-        `_segment` is segment 0, and the write fans out to *every* segment — so a
-        bare turn-on (a UI toggle, a scene, a voice command) would stamp segment
-        0's colour over all the others, destroying per-segment state on the
-        device. Anything not requested is left off the wire entirely.
+        omitted ones from current state looks harmless but is not: the group
+        reads from one segment (`primary_segment`) while its writes fan out to
+        *every* segment — so a bare turn-on (a UI toggle, a scene, a voice
+        command) would stamp that one segment's colour over all the others,
+        destroying per-segment state on the device. Anything not requested is
+        left off the wire entirely.
+
+        The card enforces the same rule on its side: it sends only the channel
+        the user edited (`src/wled.js`). Writing everything defeats this guard
+        without tripping it.
 
         Turning on also powers the device on (Pattern 5): a lit segment needs the
         device on to actually show, and the group turns every segment on. It all
