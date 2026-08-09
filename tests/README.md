@@ -1,18 +1,58 @@
-# Python tests
+# Tests
 
-The `rgbcct_wled` integration is tested in two tiers.
+| Command                    | Covers                          | Needs             | Result                     |
+| -------------------------- | ------------------------------- | ----------------- | -------------------------- |
+| `npm run setup:python-env` | —                               | any Python ≥ 3.10 | one-time; creates the venv |
+| `npm run test:js`          | the card                        | nothing extra     | 57 passed                  |
+| `npm run test:python`      | the integration, HA-free tier   | that venv         | 851 passed, 154 skipped    |
+| `npm run test:python:ha`   | the integration, **everything** | Docker            | 854 passed, 153 skipped    |
+| `npm run test`             | card + HA-free tier             | that venv         | the two fast ones          |
 
-| Command | Tier | Needs | Result |
-| --- | --- | --- | --- |
-| `npm run setup:python-env` | — | any Python ≥ 3.10 | one-time; creates the venv |
-| `npm run test:python` | pure only | that venv | 847 passed, 154 skipped |
-| `npm run test:python:ha` | **everything** | Docker | 850 passed, 153 skipped |
+**Where they live.** JavaScript tests sit beside the code they cover
+(`src/**/*.test.js`), the vitest convention. Python tests are in `tests/`,
+because pytest collects from a root and the integration is a package. Same
+reason `npm run test` skips the Docker tier: it is the only one that needs a
+container, so the default is the pair that runs in seconds.
 
-## The two tiers
+## The card (vitest)
+
+Five suites, and they exist because **two consecutive rounds of defects shipped
+in this JavaScript with no automated coverage** — including two regressions
+introduced while fixing the first round. Every assertion below traces to a bug
+that reached hardware.
+
+| Suite                           | Pins                                                        |
+| ------------------------------- | ----------------------------------------------------------- |
+| `src/color.test.js`             | the white/cct ↔ cold/warm encoding, including its lossiness |
+| `src/wled.test.js`              | that a write carries only the channel the user edited       |
+| `src/mixins/segments.test.js`   | master detection, entity validation, segment discovery      |
+| `src/mixins/sync.test.js`       | adoption guards vs. redraw, and the lossy-readback rule     |
+| `src/rgbcct-light-card.test.js` | the element's attach/detach lifecycle and write batching    |
+
+Two things worth knowing before editing them:
+
+- **Several assert on absence.** `expect(data).not.toHaveProperty('rgbww_color')`
+  is the whole point of the write-scope suite: a key the user did not touch is
+  destructive on a group entity, not merely redundant. An assertion that only
+  checked the keys that _are_ present would pass against the original bug.
+- **`color.test.js` asserts a bound, not equality.** The round trip is
+  deliberately lossy — temperature is carried as the cold/warm ratio, so its
+  resolution is the white level. Demanding exact recovery would fail against
+  correct code.
+
+Only `src/rgbcct-light-card.test.js` needs a DOM, and it opts in with a
+`@vitest-environment happy-dom` docblock. Setting the environment globally
+instead cost ~250 s of setup across five files against ~1 s of actual tests.
+happy-dom rather than jsdom because jsdom ≥ 27 requires `require(esm)`, i.e.
+Node ≥ 20.19, and this project asks only for Node 20.
+
+## The integration (pytest)
+
+Two tiers.
 
 **Pure tier** — `test_color.py`, `test_models.py`, `test_payload.py`. These import
-`color.py` / `models.py` / `payload.py` directly, and *those modules import nothing
-at all* — not Home Assistant, not each other's frameworks. A bare `pytest` runs
+`color.py` / `models.py` / `payload.py` directly, and _those modules import nothing
+at all_ — not Home Assistant, not each other's frameworks. A bare `pytest` runs
 them. That is not a limitation, it is the assertion: this tier is the only place
 the "no Home Assistant in the leaf modules" property is actually verified, because
 the container has Home Assistant installed and so cannot prove its absence.
@@ -33,7 +73,7 @@ entry point, which pytest loads **at startup regardless of which tests you selec
 So merely having it installed makes every `pytest` invocation import Home Assistant
 — breaking even the pure tests, which have no connection to it.
 
-Hence: `npm run setup:python-env` installs bare `pytest` and deliberately does *not*
+Hence: `npm run setup:python-env` installs bare `pytest` and deliberately does _not_
 install `requirements_test.txt`. The container is the only place the harness lives.
 
 `Dockerfile.test` uses `COPY` rather than a bind mount, which also matters here:
@@ -43,7 +83,7 @@ which Docker Desktop cannot bind-mount (it shares local drives only).
 
 ## Why PHACC is pinned to an exact version
 
-PHACC pins one *exact* `homeassistant` release per PHACC version, and declares a
+PHACC pins one _exact_ `homeassistant` release per PHACC version, and declares a
 `requires_python` floor to match. **pip treats an unsatisfiable `requires_python` as
 "this release does not exist"** and keeps walking backwards until something
 installs — so an unpinned install on too old an interpreter does not fail, it
@@ -56,13 +96,13 @@ the Home Assistant you actually run may not have.
 
 Sample of PyPI metadata (2026-08-08), PHACC version → HA pinned:
 
-| PHACC | homeassistant | python | |
-| --- | --- | --- | --- |
-| 0.13.205 | 2025.1.4 | ≥ 3.12 | the silent-downgrade trap |
-| 0.13.316 | 2026.2.3 | ≥ 3.13 | |
-| 0.13.317 | 2026.3.1 | ≥ 3.14 | floor jumps to 3.14 here |
-| 0.13.339 | 2026.6.3 | ≥ 3.14 | currently pinned |
-| 0.13.355 | 2026.8.1 | ≥ 3.14 | |
+| PHACC    | homeassistant | python |                           |
+| -------- | ------------- | ------ | ------------------------- |
+| 0.13.205 | 2025.1.4      | ≥ 3.12 | the silent-downgrade trap |
+| 0.13.316 | 2026.2.3      | ≥ 3.13 |                           |
+| 0.13.317 | 2026.3.1      | ≥ 3.14 | floor jumps to 3.14 here  |
+| 0.13.339 | 2026.6.3      | ≥ 3.14 | currently pinned          |
+| 0.13.355 | 2026.8.1      | ≥ 3.14 |                           |
 
 **To target a different Home Assistant release**, re-pin to the PHACC version whose
 `homeassistant==` pin matches it, and check whether the Python floor moved with it.
@@ -80,10 +120,10 @@ exact `pytest`, and the two constraints would conflict.
 
 ## Two Python floors, deliberately not shared
 
-| Floor | Owned by | Enforced by |
-| --- | --- | --- |
-| **3.10** | this repo's code — `models.py` uses `@dataclass(slots=True)` | `MINIMUM_PYTHON_VERSION` in `scripts/python-env.mjs` |
-| whatever PHACC declares | the pinned harness | pip, inside the container |
+| Floor                   | Owned by                                                     | Enforced by                                          |
+| ----------------------- | ------------------------------------------------------------ | ---------------------------------------------------- |
+| **3.10**                | this repo's code — `models.py` uses `@dataclass(slots=True)` | `MINIMUM_PYTHON_VERSION` in `scripts/python-env.mjs` |
+| whatever PHACC declares | the pinned harness                                           | pip, inside the container                            |
 
 Mirroring Home Assistant's floor into the JS constant would duplicate a number that
 moves on someone else's schedule, and would block contributors from running tests
@@ -91,16 +131,16 @@ that have nothing to do with Home Assistant. `Dockerfile.test` does name a Pytho
 series in `ARG PYTHON_VERSION`, but that copy is self-verifying: pip fails the build
 on the very next line if it does not satisfy the pin.
 
-`setup-python-env.mjs` still *prefers* the newest interpreter it can find, so a
+`setup-python-env.mjs` still _prefers_ the newest interpreter it can find, so a
 machine that happens to have the container's version gets parity for free — as a
 preference, not a requirement.
 
 ## Environment overrides
 
-| Variable | Effect |
-| --- | --- |
+| Variable        | Effect                                                       |
+| --------------- | ------------------------------------------------------------ |
 | `RGBCCT_PYTHON` | use this interpreter to build the venv, skipping all probing |
-| `RGBCCT_VENV` | put the venv somewhere other than the platform default |
+| `RGBCCT_VENV`   | put the venv somewhere other than the platform default       |
 
 The venv lives outside the repo by default (`%LOCALAPPDATA%` on Windows,
 `$XDG_CACHE_HOME` elsewhere). Beyond ordinary hygiene, that is because a checkout
