@@ -77,7 +77,19 @@ export const segmentsMixin = {
       .map((entityId) => states[entityId])
       .filter((state) => typeof state?.attributes?.segment_id === 'number')
       .map((state) => {
-        const [r = 0, g = 0, b = 0] = state.attributes.rgbww_color ?? [];
+        const [r, g, b] = state.attributes.rgbww_color ?? [];
+        // Coerced, not trusted. These land in an `innerHTML` string in
+        // updateChildren, inside a `style` attribute — a value carrying a quote
+        // would break out of it and could add an event-handler attribute.
+        //
+        // The rgbcct_wled integration cannot produce one (`models._coerce_int`),
+        // but the filter above is not "entities from my integration": it is any
+        // entity on this device exposing a numeric `segment_id`. Another
+        // integration, a template light or a python_script could attach that to
+        // an entity on the same device, and its attributes would render here.
+        // Reachability is a property of other people's code; the coercion is
+        // free, so it does not get to depend on that.
+        const toChannel = (value) => Number(value) || 0;
         return {
           number: state.attributes.segment_id,
           // Distinct from `on`: a segment whose device dropped off the network
@@ -86,10 +98,10 @@ export const segmentsMixin = {
           // partly-offline device read as a smaller device.
           available: state.state !== 'unavailable' && state.state !== 'unknown',
           on: state.state === 'on',
-          r,
-          g,
-          b,
-          brightness: state.attributes.brightness ?? 0,
+          r: toChannel(r),
+          g: toChannel(g),
+          b: toChannel(b),
+          brightness: toChannel(state.attributes.brightness),
         };
       })
       .sort((left, right) => left.number - right.number);
