@@ -7,7 +7,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { syncMixin } from './sync.js';
+import { syncMixin } from '../../../src/mixins/sync.js';
 
 const ENTITY = 'light.strip';
 

@@ -10,7 +10,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { BRIGHTNESS_CHANNEL, COLOR_CHANNEL, updateWLED } from './wled.js';
+import { BRIGHTNESS_CHANNEL, COLOR_CHANNEL, updateWLED } from '../../src/wled.js';
 
 function fakeCard() {
   return {

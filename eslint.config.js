@@ -12,9 +12,10 @@ export default [
   // Baseline: ESLint's recommended static-analysis rules for every file.
   js.configs.recommended,
 
-  // The card source runs in the browser as a custom element.
+  // The card source runs in the browser as a custom element. Its tests run in a
+  // DOM environment against the same globals, so they share this block.
   {
-    files: ["src/**/*.js"],
+    files: ["src/**/*.js", "tests/card/**/*.js"],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "module",

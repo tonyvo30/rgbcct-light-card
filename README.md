@@ -314,17 +314,17 @@ Node 20+, Windows/macOS/Linux. Line endings are normalised to LF.
 | `npm run build:dev`                 | Same bundle **with a sourcemap**, for debugging live in HA devtools against `src/`. |
 | `npm run watch`                     | Dev build that rebuilds on every save.                                              |
 | `npm run lint` / `lint:fix`         | ESLint 9 (flat config).                                                             |
-| `npm run format` / `format:check`   | Prettier, scoped to `src/**/*.js`.                                                  |
+| `npm run format` / `format:check`   | Prettier, over `src/` and `tests/card/`.                                            |
 | `npm run test`                      | Card tests plus the Home-Assistant-free integration tests.                          |
-| `npm run test:js` / `test:js:watch` | Vitest, for the card (`src/**/*.test.js`).                                          |
+| `npm run test:js` / `test:js:watch` | Vitest, for the card (`tests/card/`).                                               |
 | `npm run setup:python-env`          | One-time: creates the Python test venv (needs Python ≥ 3.10).                       |
 | `npm run test:python`               | Integration tests that need no Home Assistant.                                      |
 | `npm run test:python:ha`            | The full Python suite, in Docker.                                                   |
 
-JavaScript tests sit beside the code they cover; Python tests are in `tests/`.
-The Home Assistant tier is Docker-only — Home Assistant cannot be imported on
-Windows — which is why `npm run test` runs the other two. See
-[`tests/README.md`](tests/README.md).
+All tests live under `tests/` — the card's in `tests/card/`, mirroring the
+`src/` layout; the integration's alongside it. The Home Assistant tier is
+Docker-only, because Home Assistant cannot be imported on Windows, which is why
+`npm run test` runs the other two. See [`tests/README.md`](tests/README.md).
 
 **Rebuild `dist/` after every `src/` change** — Home Assistant loads the built
 bundle, not the source.

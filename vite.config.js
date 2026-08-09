@@ -31,9 +31,9 @@ export default defineConfig(({ mode }) => {
     // which is what lets them import the element module (its version banner
     // references __CARD_VERSION__ at load time).
     test: {
-      // Tests sit beside the code they cover. `dist/` is excluded because the
-      // built bundle is a copy of everything here.
-      include: ['src/**/*.test.js'],
+      // Card tests live under tests/card/, mirroring the src/ layout, so `src/`
+      // stays exactly what ships in the bundle.
+      include: ['tests/card/**/*.test.js'],
       // Default `node`: only the element's lifecycle suite needs a DOM, and it
       // opts in with a `@vitest-environment happy-dom` docblock. Setting it
       // globally instead costs a browser environment per suite — measured at

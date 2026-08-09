@@ -15,3 +15,7 @@
 # interpreter, which has no business inside a Linux image.
 **/__pycache__
 **/*.pyc
+
+# tests/ holds the card's vitest suites too. The image runs pytest only, so they
+# are context (and image layers) spent on files nothing in here will execute.
+tests/card/

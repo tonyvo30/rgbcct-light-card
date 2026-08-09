@@ -14,7 +14,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import './rgbcct-light-card.js';
+import '../../src/rgbcct-light-card.js';
 
 const GROUP = 'light.strip';
 

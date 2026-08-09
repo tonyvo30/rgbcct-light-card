@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { coldWarmToWhiteCct, whiteCctToColdWarm } from './color.js';
+import { coldWarmToWhiteCct, whiteCctToColdWarm } from '../../src/color.js';
 
 describe('whiteCctToColdWarm', () => {
   it('puts all the white in the warm channel at cct 0 and the cold one at 255', () => {

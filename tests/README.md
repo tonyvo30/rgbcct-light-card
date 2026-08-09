@@ -8,11 +8,14 @@
 | `npm run test:python:ha`   | the integration, **everything** | Docker            | 854 passed, 153 skipped    |
 | `npm run test`             | card + HA-free tier             | that venv         | the two fast ones          |
 
-**Where they live.** JavaScript tests sit beside the code they cover
-(`src/**/*.test.js`), the vitest convention. Python tests are in `tests/`,
-because pytest collects from a root and the integration is a package. Same
-reason `npm run test` skips the Docker tier: it is the only one that needs a
-container, so the default is the pair that runs in seconds.
+**Where they live.** All of them are under `tests/` — the card's in
+`tests/card/`, mirroring the `src/` layout so each suite's counterpart is
+obvious, and the integration's in `tests/` alongside `conftest.py`. Keeping the
+card's tests out of `src/` means `src/` is exactly what ships in the bundle,
+with nothing to exclude when reading or packaging it.
+
+`npm run test` skips the Docker tier because it is the only one needing a
+container; the default is the pair that runs in seconds.
 
 ## The card (vitest)
 
@@ -21,13 +24,13 @@ in this JavaScript with no automated coverage** — including two regressions
 introduced while fixing the first round. Every assertion below traces to a bug
 that reached hardware.
 
-| Suite                           | Pins                                                        |
-| ------------------------------- | ----------------------------------------------------------- |
-| `src/color.test.js`             | the white/cct ↔ cold/warm encoding, including its lossiness |
-| `src/wled.test.js`              | that a write carries only the channel the user edited       |
-| `src/mixins/segments.test.js`   | master detection, entity validation, segment discovery      |
-| `src/mixins/sync.test.js`       | adoption guards vs. redraw, and the lossy-readback rule     |
-| `src/rgbcct-light-card.test.js` | the element's attach/detach lifecycle and write batching    |
+| Suite                                  | Pins                                                        |
+| -------------------------------------- | ----------------------------------------------------------- |
+| `tests/card/color.test.js`             | the white/cct ↔ cold/warm encoding, including its lossiness |
+| `tests/card/wled.test.js`              | that a write carries only the channel the user edited       |
+| `tests/card/mixins/segments.test.js`   | master detection, entity validation, segment discovery      |
+| `tests/card/mixins/sync.test.js`       | adoption guards vs. redraw, and the lossy-readback rule     |
+| `tests/card/rgbcct-light-card.test.js` | the element's attach/detach lifecycle and write batching    |
 
 Two things worth knowing before editing them:
 
@@ -40,7 +43,7 @@ Two things worth knowing before editing them:
   resolution is the white level. Demanding exact recovery would fail against
   correct code.
 
-Only `src/rgbcct-light-card.test.js` needs a DOM, and it opts in with a
+Only `tests/card/rgbcct-light-card.test.js` needs a DOM, and it opts in with a
 `@vitest-environment happy-dom` docblock. Setting the environment globally
 instead cost ~250 s of setup across five files against ~1 s of actual tests.
 happy-dom rather than jsdom because jsdom ≥ 27 requires `require(esm)`, i.e.

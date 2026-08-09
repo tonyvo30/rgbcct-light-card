@@ -8,7 +8,7 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { segmentsMixin } from './segments.js';
+import { segmentsMixin } from '../../../src/mixins/segments.js';
 
 const GROUP = 'light.strip';
 const SEGMENT_ZERO = 'light.strip_segment_0';
