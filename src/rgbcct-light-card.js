@@ -19,6 +19,11 @@ class RGBCCTLightCard extends HTMLElement {
       throw new Error('You must define an entity');
     }
 
+    // Re-pointing the card at a different entity (the card editor does this on
+    // every keystroke) invalidates the cached master-ness — it is a property of
+    // the configured entity, so a new config must resolve it again.
+    this._isMaster = undefined;
+
     this.config = config;
 
     this.compact = config.compact ?? false;

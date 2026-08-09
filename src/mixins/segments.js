@@ -24,14 +24,32 @@ export const segmentsMixin = {
   // A card is a master (whole-device) card when its own entity carries no
   // `segment_id` — the group entity omits it. Optional `master:` config overrides.
   //
-  // Attributes are unavailable until `hass` arrives, which is after the first
-  // render, so this reads as `true` on that first pass; `set hass` re-renders if
-  // the answer turns out to be false. Guessing master is the safer default: it
-  // renders a children section that the re-render removes, rather than omitting
-  // one a master needs.
+  // **Resolved once, then cached, and it fails closed.** Master-ness follows
+  // from which entity the user configured, so it is fixed for the life of that
+  // config and must not be re-derived from live state. Two rules make that safe:
+  //
+  //   1. Only a state that is present and not `unavailable` may decide it. An
+  //      absent or unavailable entity leaves the question open rather than
+  //      answering it — "no segment_id" from a dropout is not evidence of being
+  //      a group. (`segment_id` is a capability attribute now, so it survives
+  //      unavailability anyway; this guard also covers entities that predate
+  //      that change, or that never load at all.)
+  //   2. Until something answers it, the answer is *segment*, not master. This
+  //      is the one asymmetry that matters: a master's writes and its power
+  //      toggle are device-wide, so guessing master hands a card a blast radius
+  //      the user never configured. Guessing segment merely under-renders, and
+  //      the first good state corrects it via the re-render in `set hass`.
   isMaster() {
     if (this.config.master !== undefined) return this.config.master;
-    return this._hass?.states?.[this.config.entity]?.attributes?.segment_id === undefined;
+
+    if (this._isMaster === undefined) {
+      const state = this._hass?.states?.[this.config.entity];
+      if (state && state.state !== 'unavailable') {
+        this._isMaster = state.attributes?.segment_id === undefined;
+      }
+    }
+
+    return this._isMaster ?? false;
   },
 
   // This device's segments, in segment-number order. Each entry is what the
@@ -62,6 +80,11 @@ export const segmentsMixin = {
         const [r = 0, g = 0, b = 0] = state.attributes.rgbww_color ?? [];
         return {
           number: state.attributes.segment_id,
+          // Distinct from `on`: a segment whose device dropped off the network
+          // is not the same as one the user switched off, and the list must not
+          // report the first as the second — nor omit it, which would make a
+          // partly-offline device read as a smaller device.
+          available: state.state !== 'unavailable' && state.state !== 'unknown',
           on: state.state === 'on',
           r,
           g,
@@ -98,8 +121,8 @@ export const segmentsMixin = {
   },
 
   // Render the master's read-only children list (one row per segment: colour
-  // swatch + brightness %). An off segment reads as a hollow swatch and "Off"
-  // instead of a %.
+  // swatch + brightness %). An off segment reads as a hollow swatch and "Off";
+  // an unreachable one says so rather than impersonating an off segment.
   updateChildren() {
     const list = this.childrenList;
     if (!list) return;
@@ -109,11 +132,13 @@ export const segmentsMixin = {
     list.innerHTML = segments
       .map((segment) => {
         const percent = Math.round((segment.brightness / 255) * 100);
+        const readout = segment.available ? (segment.on ? percent + '%' : 'Off') : 'Unavailable';
+        const swatch = segment.on ? `rgb(${segment.r}, ${segment.g}, ${segment.b})` : 'transparent';
         return `
         <div class="child${segment.on ? '' : ' off'}">
-          <span class="child-swatch" style="background: ${segment.on ? `rgb(${segment.r}, ${segment.g}, ${segment.b})` : 'transparent'}"></span>
+          <span class="child-swatch" style="background: ${swatch}"></span>
           <span class="child-name">Segment ${segment.number}</span>
-          <span class="child-bri">${segment.on ? percent + '%' : 'Off'}</span>
+          <span class="child-bri">${readout}</span>
         </div>
       `;
       })

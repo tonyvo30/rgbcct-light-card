@@ -146,25 +146,35 @@ class RgbcctWledLight(CoordinatorEntity[RgbcctWledCoordinator], LightEntity):
         return segment.brightness if segment is not None else None
 
     @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Expose which WLED segment this entity drives.
+    def capability_attributes(self) -> dict[str, Any]:
+        """Static entity metadata, plus which WLED segment this entity drives.
 
         Deliberately absent on the group entity, so "has a `segment_id`" is the
         test for being a segment. The card uses it for exactly that, and to
         label/order the master's children list.
 
-        This exists because **entity ids cannot carry that information
-        reliably.** Home Assistant derives an id from the device's name once, at
-        creation, and never revises it — so assigning the device to an area, or
-        renaming it, leaves earlier siblings on the old pattern and newer ones on
-        the new one. A card matching `<group_id>_segment_<n>` then silently stops
-        seeing some of its own segments (found on hardware: a device moved to an
-        area gained `light.bedroom_wled_…_segment_2` alongside two pre-existing
-        `light.wled_…_segment_<n>` entities).
+        **Why this and not `extra_state_attributes`.** Home Assistant merges
+        `extra_state_attributes` into a state only while the entity is
+        *available*; capability attributes are included either way. `segment_id`
+        is immutable for the entity's lifetime, so it belongs here on the merits
+        — and putting it here means an ESP reboot cannot make a segment stop
+        looking like a segment. It previously could: the attribute vanished, the
+        card read "no segment_id" as "this is the whole-device master", and every
+        segment card silently re-rendered as a device-wide control.
+
+        This attribute exists at all because **entity ids cannot carry the
+        information reliably.** Home Assistant derives an id from the device's
+        name once, at creation, and never revises it — so assigning the device to
+        an area, or renaming it, leaves earlier siblings on the old pattern and
+        newer ones on the new one. A card matching `<group_id>_segment_<n>` then
+        silently stops seeing some of its own segments (found on hardware: a
+        device moved to an area gained `light.bedroom_wled_…_segment_2` alongside
+        two pre-existing `light.wled_…_segment_<n>` entities).
         """
-        if self._is_group:
-            return None
-        return {"segment_id": self._segment_id}
+        attributes = dict(super().capability_attributes or {})
+        if not self._is_group:
+            attributes["segment_id"] = self._segment_id
+        return attributes
 
     @property
     def rgbww_color(self) -> tuple[int, int, int, int, int] | None:
