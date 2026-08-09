@@ -65,10 +65,16 @@ class RGBCCTLightCard extends HTMLElement {
     // stay live during a drag.
     if (!this.config) return;
 
-    // Master-ness comes from an entity attribute (see isMaster), which does not
-    // exist yet at setConfig time — HA sets `hass` after it. Re-render once if
-    // the first pass got it wrong; the layouts differ by the children section.
-    if (this._renderedAsMaster !== this.isMaster()) this.render();
+    // Both of these are read from entity attributes, which do not exist yet at
+    // setConfig time — HA sets `hass` afterwards. Re-render when either answer
+    // changes: they select between three different layouts (error, segment,
+    // master), and an entity that appears late must replace the error card.
+    if (
+      this._renderedAsMaster !== this.isMaster() ||
+      this._renderedProblem !== this.entityProblem()
+    ) {
+      this.render();
+    }
 
     this.syncFromState();
   }
@@ -119,14 +125,15 @@ class RGBCCTLightCard extends HTMLElement {
   }
 
   render() {
-    // Remember which layout was built, so `set hass` can tell when the answer
-    // has changed and this needs redoing.
+    // Remember which layout was built, so `set hass` can tell when either
+    // answer has changed and this needs redoing.
     this._renderedAsMaster = this.isMaster();
+    this._renderedProblem = this.entityProblem();
 
     // The element the user had grabbed is about to be destroyed, so end any
     // drag in progress. Belt-and-braces with the document-bound release in
-    // events.js: a live `_wheelActive` against a fresh wheel makes hovering
-    // write to the device.
+    // connectedCallback: a live `_wheelActive` against a fresh wheel makes
+    // hovering write to the device.
     //
     // `_holdUntil` deliberately survives. It is a timestamp that expires on its
     // own, nothing needs to clear it, and clearing it here would let the next
@@ -230,6 +237,8 @@ class RGBCCTLightCard extends HTMLElement {
   }
 
   getCardSize() {
+    if (this._renderedProblem) return 1;
+
     return this.compact ? 1 : 4;
   }
 }

@@ -186,6 +186,18 @@ name: Living Room
 | `master`   | boolean     | auto-detected | Force master (`true`) or segment (`false`) behaviour. Auto-detection reads the entity's `segment_id` attribute, not its name.                                                 |
 | ~~`push`~~ | ~~boolean~~ | —             | **Removed.** It disabled the card's direct WLED WebSocket, which no longer exists — the card gets pushed updates through Home Assistant instead. Setting it now does nothing. |
 
+### When the entity is wrong
+
+If `entity` names something that does not exist, the card is replaced by
+**"Entity not found: `<id>`"**. If it names a real entity that is not one of the
+`rgbcct_wled` integration's lights — a typo landing on another light, or the
+native WLED integration's entity for the same strip — it says **"Not an
+rgbcct_wled light: `<id>`"**.
+
+A light that exists but is currently **unavailable** is not an error: the card
+renders as normal and shows the segments as unavailable, because the
+configuration is fine and the device is simply offline.
+
 ### Examples
 
 **Master card** (whole strip, with the collapsible Segments list):

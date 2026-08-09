@@ -1,3 +1,27 @@
+// Text going into one of the innerHTML templates below. The entity id and the
+// card name come from the user's own YAML, so this is self-inflicted rather than
+// hostile — but these are template literals, not text nodes, and there is no
+// reason to hand user input to the HTML parser.
+const escapeText = (value) =>
+  String(value).replace(/[&<>"']/g, (character) => `&#${character.charCodeAt(0)};`);
+
+// Every element reference renderCard can publish. Cleared before each layout so
+// a branch that does not build a control cannot leave the previous layout's
+// (now detached) element behind — the UI helpers all null-check, so a stale
+// reference would silently update a node that is no longer on the page.
+function clearElementReferences(card) {
+  card.brightness = null;
+  card.wheel = null;
+  card.wheelHandle = null;
+  card.wheelShade = null;
+  card.value = null;
+  card.white = null;
+  card.cctInput = null;
+  card.colorInput = null;
+  card.toggle = null;
+  card.childrenList = null;
+}
+
 function sliderRow(label, id, value, min = 0) {
   return `
     <div class="row">
@@ -37,6 +61,23 @@ function colorWheel() {
 }
 
 export function renderCard(card) {
+  clearElementReferences(card);
+
+  // A misconfigured entity replaces the whole card, the way native cards do.
+  // `ha-alert` is Home Assistant's own element, so this matches the rest of the
+  // dashboard; styles.js has a fallback for the case where it is not defined.
+  const problem = card.entityProblem();
+
+  if (problem) {
+    card.innerHTML = `
+      <ha-card>
+        <ha-alert alert-type="error">${escapeText(problem)}</ha-alert>
+      </ha-card>
+    `;
+
+    return;
+  }
+
   if (card.compact) {
     card.innerHTML = `
       <ha-card>
@@ -50,16 +91,7 @@ export function renderCard(card) {
     `;
 
     // No colour controls in compact mode; just the power toggle.
-    card.brightness = null;
-    card.wheel = null;
-    card.wheelHandle = null;
-    card.wheelShade = null;
-    card.value = null;
-    card.white = null;
-    card.cctInput = null;
-    card.colorInput = null;
     card.toggle = card.querySelector('#toggle');
-    card.childrenList = null;
 
     return;
   }
@@ -71,7 +103,7 @@ export function renderCard(card) {
       <div class="card">
         <div class="header">
           <div id="swatch" class="swatch"></div>
-          <span class="title">${title}</span>
+          <span class="title">${escapeText(title)}</span>
           <span id="mixed-badge" class="mixed-badge" title="Segments differ in colour or brightness">Mixed</span>
           <ha-switch id="toggle"></ha-switch>
           <ha-icon id="collapse" class="collapse" icon="mdi:unfold-less-horizontal"></ha-icon>

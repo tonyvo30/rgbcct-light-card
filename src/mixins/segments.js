@@ -21,6 +21,38 @@
 // N service calls, so setPower just commands this card's own entity.
 
 export const segmentsMixin = {
+  // Why this card cannot be shown, or null if it can. Rendered in place of the
+  // whole card (see render.js), the way native cards report a bad entity —
+  // otherwise a typo produces a card that simply does nothing, with the reason
+  // visible only to someone who thinks to open the console.
+  //
+  // Two things deliberately do NOT count as problems:
+  //
+  //   - **No `hass` yet.** HA calls setConfig before it sets `hass`, so the
+  //     entity is not knowable at first paint. Reporting "not found" then would
+  //     flash on every page load.
+  //   - **`unavailable`.** The entity is real and correctly configured; the
+  //     device is offline. That is the card's normal degraded state, not a
+  //     misconfiguration, and blanking the card would hide the segment list
+  //     exactly when someone is trying to see what is wrong.
+  entityProblem() {
+    if (!this._hass) return null;
+
+    const state = this._hass.states?.[this.config.entity];
+    if (!state) return `Entity not found: ${this.config.entity}`;
+
+    // An explicit `master:` is the user overriding detection; take it as them
+    // vouching for the entity too, rather than second-guessing it.
+    if (this.config.master !== undefined) return null;
+
+    const attributes = state.attributes ?? {};
+    if (typeof attributes.segment_id !== 'number' && attributes.is_group !== true) {
+      return `Not an rgbcct_wled light: ${this.config.entity}`;
+    }
+
+    return null;
+  },
+
   // A card is a master (whole-device) card when its own entity carries no
   // `segment_id` — the group entity omits it. Optional `master:` config overrides.
   //
