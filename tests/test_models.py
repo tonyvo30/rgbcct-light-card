@@ -59,6 +59,23 @@ def test_primary_segment_falls_back_when_nothing_is_lit():
     assert models.WledState(on=False, segments=[]).primary_segment() is None
 
 
+def test_channel_values_are_clamped_to_the_wled_range():
+    # A malformed frame must not push out-of-range values into the entity: a
+    # negative white survives the card's high-side cap and gets written back.
+    payload = {"seg": [{"id": 0, "col": [[999999, -1, 30, -7]], "cct": -5, "bri": 400}]}
+    segment = models.parse_state(payload).segments[0]
+
+    assert (segment.r, segment.g, segment.b, segment.w) == (255, 0, 30, 0)
+    assert segment.cct == 0
+    assert segment.brightness == 255
+
+
+def test_indices_are_not_clamped_to_255():
+    # start/stop are pixel positions, not channels — a long strip exceeds 255.
+    payload = {"seg": [{"id": 0, "start": 0, "stop": 900, "col": [[1, 2, 3]]}]}
+    assert models.parse_state(payload).segments[0].segment_id == 0
+
+
 def test_inactive_segments_are_skipped():
     payload = {
         "seg": [

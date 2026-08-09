@@ -77,6 +77,21 @@ def _coerce_int(value: object, default: int) -> int:
         return default
 
 
+def _coerce_channel(value: object, default: int) -> int:
+    """`_coerce_int` clamped to WLED's 0-255 channel range.
+
+    Bounding the *type* is not enough for the colour/brightness fields. This
+    input is unauthenticated plain HTTP from a LAN device, and an out-of-range
+    number propagates: a negative `r` reaches `rgbww_color`, and the card's
+    `coldWarmToWhiteCct` caps the high side but not the low, so a negative white
+    would be written straight back to the device on the next edit.
+
+    Only the 0-255 fields go through this. `segment_id`, `start` and `stop` are
+    indices, not channels, and legitimately exceed 255 on a long strip.
+    """
+    return min(255, max(0, _coerce_int(value, default)))
+
+
 def parse_state(payload: dict) -> WledState:
     """Build a WledState from a /json/state object or a /ws frame.
 
@@ -116,12 +131,12 @@ def parse_state(payload: dict) -> WledState:
             SegmentState(
                 segment_id=_coerce_int(raw_segment.get("id", index), index),
                 on=bool(raw_segment.get("on", True)),
-                r=_coerce_int(primary[0] if len(primary) > 0 else 0, 0),
-                g=_coerce_int(primary[1] if len(primary) > 1 else 0, 0),
-                b=_coerce_int(primary[2] if len(primary) > 2 else 0, 0),
-                w=_coerce_int(primary[3] if len(primary) > 3 else 0, 0),
-                cct=_coerce_int(raw_segment.get("cct", DEFAULT_CCT), DEFAULT_CCT),
-                brightness=_coerce_int(raw_segment.get("bri", 255), 255),
+                r=_coerce_channel(primary[0] if len(primary) > 0 else 0, 0),
+                g=_coerce_channel(primary[1] if len(primary) > 1 else 0, 0),
+                b=_coerce_channel(primary[2] if len(primary) > 2 else 0, 0),
+                w=_coerce_channel(primary[3] if len(primary) > 3 else 0, 0),
+                cct=_coerce_channel(raw_segment.get("cct", DEFAULT_CCT), DEFAULT_CCT),
+                brightness=_coerce_channel(raw_segment.get("bri", 255), 255),
             )
         )
 
