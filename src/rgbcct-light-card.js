@@ -77,10 +77,34 @@ class RGBCCTLightCard extends HTMLElement {
     return this._hass;
   }
 
-  // No connectedCallback: there is nothing to start. State arrives via
-  // `set hass`, which HA calls on attach and on every subsequent change — the
-  // poll timer, the direct WLED socket and the visibilitychange handler that
-  // released it all went with the doorbell.
+  // Ends a colour-wheel drag. Bound to the DOCUMENT rather than to the wheel,
+  // because `set hass` can re-render mid-drag and renderCard() replaces
+  // innerHTML — a listener on the wheel would die with the element it watches,
+  // taking the only thing that clears `_wheelActive` with it. That flag stuck
+  // on is bad: syncFromState stops adopting entity state, and the replacement
+  // wheel's pointermove (which checks only the flag) picks colours and writes
+  // to the device on mere hover.
+  //
+  // It lives in the lifecycle callbacks, not in setupEvents, because it is a
+  // card-lifetime concern rather than a per-render one. Home Assistant detaches
+  // and re-attaches cards without re-rendering them — switching views, editing
+  // the dashboard, adding a card — so registering it from setupEvents left it
+  // removed by disconnectedCallback with nothing to restore it, and the very
+  // stuck-wheel bug it exists to prevent came back on the next re-attach.
+  connectedCallback() {
+    this._releaseWheel ??= () => {
+      this._wheelActive = false;
+    };
+
+    // Re-attach can't inherit a drag: the pointerdown happened to an element
+    // that is no longer in the document.
+    this._wheelActive = false;
+
+    // Same function reference, so a redundant add is a no-op.
+    document.addEventListener('pointerup', this._releaseWheel);
+    document.addEventListener('pointercancel', this._releaseWheel);
+  }
+
   disconnectedCallback() {
     // Cancel a pending send-debounce, so a card removed within the 100ms window
     // after an edit doesn't fire updateWLED() from a detached element
@@ -88,11 +112,9 @@ class RGBCCTLightCard extends HTMLElement {
     clearTimeout(this._sendTimer);
     this._sendTimer = null;
 
-    // The wheel's release handler lives on the document (see events.js), so it
-    // outlives the element and has to be taken down explicitly.
-    if (this.releaseWheel) {
-      document.removeEventListener('pointerup', this.releaseWheel);
-      document.removeEventListener('pointercancel', this.releaseWheel);
+    if (this._releaseWheel) {
+      document.removeEventListener('pointerup', this._releaseWheel);
+      document.removeEventListener('pointercancel', this._releaseWheel);
     }
   }
 
