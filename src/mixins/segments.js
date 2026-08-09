@@ -3,16 +3,28 @@
 // the "mixed segments" check.
 //
 // HOW A CARD FINDS ITS DEVICE'S SEGMENTS
-// By device identity, via HA's entity registry (`hass.entities`), and by the
-// `segment_id` attribute the integration puts on each segment light.
+// By device identity, via HA's entity registry (`hass.entities`), and then by two
+// markers the integration puts in each entity's **capability attributes**
+// (`light.py`): a segment carries `segment_id`, the group carries `is_group`.
 //
-// It used to match entity-id strings — siblings were "ids sharing my prefix and
-// containing _segment_". That looks reasonable and is silently wrong: HA derives
-// an entity id from the device's name *once*, at creation, and never revises it.
-// Assign the device to an area or rename it and the next segment created gets an
-// id on the new pattern while its siblings keep the old one, so the master stops
-// seeing part of its own device with no error anywhere. Found on hardware; see
-// `light.py`'s extra_state_attributes for the full account.
+// TWO RULES, BOTH LEARNED ON HARDWARE. Do not undo either.
+//
+// 1. Never match on the *shape* of an entity id. Siblings used to be "ids sharing
+//    my prefix and containing _segment_", which looks reasonable and is silently
+//    wrong: HA derives an id from the device's name *once*, at creation, and never
+//    revises it. Assign the device to an area and the next segment created gets an
+//    id on the new pattern while its siblings keep the old one — the master then
+//    stops seeing part of its own device, with no error anywhere.
+//
+// 2. Never infer one kind from the other's marker being *absent*. An absent
+//    attribute has three causes — segment, group, or not-loaded — and no absence
+//    test can tell them apart. Reading "no segment_id" as master gave unloaded
+//    cards a device-wide blast radius; reading it as segment left real masters
+//    with no children list. Both markers are asserted, so neither is inferred.
+//
+// The markers live in `capability_attributes` rather than `extra_state_attributes`
+// for a load-bearing reason — see `light.py`. Moving them would re-create rule 2's
+// failure, and nothing would complain at build time.
 //
 // On/off propagation used to live here too — the master flipped the group entity
 // *and* every segment entity, because WLED keeps per-segment power flags that a
@@ -123,8 +135,8 @@ export const segmentsMixin = {
   //
   // Membership is the device this card's entity belongs to, so it survives every
   // rename; `segment_id` marks which of that device's entities are segments (the
-  // group has none) and supplies the real ordering, since entity ids sort as text
-  // and would put "_segment_10" before "_segment_2".
+  // group asserts `is_group` instead) and supplies the real ordering, since
+  // entity ids sort as text and would put "_segment_10" before "_segment_2".
   //
   // Colour comes from `rgbww_color`, whose cold/warm whites are deliberately
   // ignored — the swatch shows the RGB the segment is displaying, and folding

@@ -159,14 +159,27 @@ class RgbcctWledLight(CoordinatorEntity[RgbcctWledCoordinator], LightEntity):
 
         `segment_id` also labels and orders the master's children list.
 
-        **Why this and not `extra_state_attributes`.** Home Assistant merges
-        `extra_state_attributes` into a state only while the entity is
-        *available*; capability attributes are included either way. `segment_id`
-        is immutable for the entity's lifetime, so it belongs here on the merits
-        — and putting it here means an ESP reboot cannot make a segment stop
-        looking like a segment. It previously could: the attribute vanished, the
-        card read "no segment_id" as "this is the whole-device master", and every
-        segment card silently re-rendered as a device-wide control.
+        **Why this and not `extra_state_attributes` — load-bearing, not tidiness.**
+        Home Assistant merges `extra_state_attributes` into a state only while the
+        entity is *available*; capability attributes are included either way. Both
+        markers are immutable for the entity's lifetime, so they belong here on the
+        merits — and putting them here means an ESP reboot cannot make a segment
+        stop looking like a segment. It previously could: the attribute vanished,
+        the card read "no segment_id" as "this is the whole-device master", and
+        every segment card silently re-rendered as a device-wide control.
+
+        The guarantee is stronger than "survives unavailability". Capability
+        attributes are persisted to the entity registry when the entity is added
+        (`entity_platform.py`, `capabilities=entity.capability_attributes`) and are
+        seeded back into *restored* states (`entity_registry.py`, the
+        `ATTR_RESTORED` path). So the markers are also present when this
+        integration has not set up at all — an HA restart with the device offline,
+        or a `ConfigEntryNotReady` retry loop. They are readable in every state in
+        which a card can be rendered, which is what lets the card treat "neither
+        marker" as a genuine misconfiguration rather than as a maybe.
+
+        Moving these to `extra_state_attributes` would silently re-create the bug
+        above, and nothing would fail at import or start-up to warn you.
 
         This attribute exists at all because **entity ids cannot carry the
         information reliably.** Home Assistant derives an id from the device's
