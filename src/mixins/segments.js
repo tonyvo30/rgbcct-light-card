@@ -65,15 +65,36 @@ export const segmentsMixin = {
   // white into it would wash every swatch toward grey. `on` already accounts for
   // device power: the integration reports a segment as on only when the device
   // and the segment are both on (`light.py`), so there is nothing to combine here.
-  deviceSegments() {
+  // Entity ids belonging to this card's device. Scanning the registry means
+  // touching every entity in the instance, and `set hass` fires on every state
+  // change ANYWHERE — so this is cached against the registry object itself.
+  // Home Assistant replaces `hass.entities` only when the registry changes
+  // (entities added, removed, renamed), not on state changes, so an identity
+  // check invalidates exactly when the answer could have moved.
+  deviceEntityIds() {
     const registry = this._hass?.entities || {};
-    const states = this._hass?.states || {};
+
+    if (this._deviceEntityIdsFrom === registry) return this._deviceEntityIds;
 
     const deviceId = registry[this.config.entity]?.device_id;
-    if (!deviceId) return [];
+    const entityIds = deviceId
+      ? Object.keys(registry).filter((entityId) => registry[entityId].device_id === deviceId)
+      : [];
 
-    return Object.keys(registry)
-      .filter((entityId) => registry[entityId].device_id === deviceId)
+    this._deviceEntityIdsFrom = registry;
+    this._deviceEntityIds = entityIds;
+
+    return entityIds;
+  },
+
+  deviceSegments() {
+    // Cached per `hass` object: one refresh asks for this twice (the mixed check
+    // and the children list), and both want the same answer.
+    if (this._deviceSegmentsFrom === this._hass) return this._deviceSegments;
+
+    const states = this._hass?.states || {};
+
+    const segments = this.deviceEntityIds()
       .map((entityId) => states[entityId])
       .filter((state) => typeof state?.attributes?.segment_id === 'number')
       .map((state) => {
@@ -105,6 +126,11 @@ export const segmentsMixin = {
         };
       })
       .sort((left, right) => left.number - right.number);
+
+    this._deviceSegmentsFrom = this._hass;
+    this._deviceSegments = segments;
+
+    return segments;
   },
 
   // Are the segments non-homogeneous? True if any lit segment's colour or
@@ -141,7 +167,7 @@ export const segmentsMixin = {
 
     const segments = this.deviceSegments();
 
-    list.innerHTML = segments
+    const markup = segments
       .map((segment) => {
         const percent = Math.round((segment.brightness / 255) * 100);
         const readout = segment.available ? (segment.on ? percent + '%' : 'Off') : 'Unavailable';
@@ -155,6 +181,15 @@ export const segmentsMixin = {
       `;
       })
       .join('');
+
+    // Only touch the DOM when the markup actually moved. This runs on every
+    // `set hass` — i.e. on every state change anywhere in Home Assistant — and
+    // almost none of those concern this device, so an unconditional write would
+    // tear down and rebuild identical rows thousands of times over.
+    if (markup !== this._renderedChildrenMarkup) {
+      list.innerHTML = markup;
+      this._renderedChildrenMarkup = markup;
+    }
 
     const count = this.querySelector('#children-count');
     if (count) count.textContent = segments.length ? `(${segments.length})` : '';

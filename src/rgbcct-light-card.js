@@ -111,6 +111,11 @@ class RGBCCTLightCard extends HTMLElement {
     // push snap back the control the user just moved.
     this._wheelActive = false;
 
+    // renderCard replaces innerHTML, so the children list is about to become an
+    // empty element again. Forget what was rendered into the old one, or
+    // updateChildren's skip-if-unchanged check would match and leave it empty.
+    this._renderedChildrenMarkup = null;
+
     renderCard(this);
 
     addStyles(this);
