@@ -63,8 +63,11 @@ Anthropic's Claude.
 
 ## Requirements
 
-- **Home Assistant 2024.11 or newer.** That is the floor the integration's
-  config flow needs; it has only been exercised against 2026.6.
+- **Home Assistant 2024.11 or newer.** The integration uses three APIs with
+  different minimums — `entry.runtime_data` (2024.6), the
+  `homeassistant.helpers.service_info` location of `ZeroconfServiceInfo` (2024.9),
+  and an `OptionsFlow` that takes its config entry implicitly (2024.11) — so the
+  highest of them is the floor. It has only been exercised against 2026.6.
 - A WLED strip configured for **RGBCCT** output, reachable on your network.
 
 Nothing else — the card ships as a prebuilt file. Node.js is needed only to

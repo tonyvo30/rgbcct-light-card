@@ -5,27 +5,33 @@
 const escapeText = (value) =>
   String(value).replace(/[&<>"']/g, (character) => `&#${character.charCodeAt(0)};`);
 
-// Every element reference renderCard publishes, as card property -> selector.
+// The element references renderCard publishes, as card property -> selector.
 //
-// One list, and one function reading it, called on **every** path out of
-// renderCard including the error layout that builds none of these. That total-ness
-// is the point: a `querySelector` that finds nothing yields null, which is what
-// every UI helper already checks for, so a layout missing a control needs no
-// special handling and no branch has to know which subset applies to it.
+// **Published on every path out of renderCard**, including the error layout that
+// builds none of them. That total-ness is the point: a `querySelector` finding
+// nothing yields null, which every UI helper already checks for, so a layout
+// missing a control needs no special handling and no branch has to know which
+// subset applies to it. It replaced a pair of hand-maintained lists — one
+// nulling these, one assigning them — the same trap as a listener whose add and
+// remove run at different rates.
 //
-// This replaced a pair of hand-maintained lists — one nulling the references,
-// one assigning them — which is the same trap as a listener whose add and remove
-// run at different rates. Adding a control meant editing both ends, and missing
-// the null-out left the UI helpers writing to a detached node from the previous
-// layout, silently, because they only check for null.
+// **This is deliberately a minority of the ids in this file.** The markup helpers
+// below carry ~15 more (`#swatch`, `#bri-val`, `#children-count`, `#collapse`, …)
+// that their readers look up at each use. An element earns a cached reference
+// only when something after render has to *hold* it: compare it against
+// `document.activeElement` (the sliders, the colour input, the toggle), measure
+// it (`wheel`), bind an input listener that reads it back (`events.js`), or
+// rewrite its contents on a hot path (`wheelHandle`, `wheelShade`,
+// `childrenList`). An id that is only ever a write target for text or one style
+// property is cheaper to query live than to keep in sync here — so when in doubt
+// about a new control, query it live.
 //
-// One pairing survives that collapse and cannot be removed here: these selectors
-// still have to agree with the `id="..."` literals in the markup helpers below.
-// Drift stays silent, because a `querySelector` finding nothing is
-// indistinguishable from a layout that legitimately omits that control. Hence the
-// export — the tests drive their assertions from `Object.keys`, so an entry added
-// here cannot outrun its coverage, and a selector matching nothing fails loudly
-// instead of leaving one control quietly frozen.
+// **One pairing survives the collapse and cannot be removed here:** these
+// selectors still have to agree with the `id="..."` literals below, and drift
+// stays silent because a null reference is indistinguishable from a layout that
+// legitimately omits that control. Hence the export — the tests assert over
+// `Object.keys`, so an entry cannot outrun its coverage and a selector matching
+// nothing fails loudly instead of freezing one control.
 export const ELEMENT_SELECTORS = {
   brightness: '#bri',
   wheel: '#wheel',
