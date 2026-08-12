@@ -1,264 +1,79 @@
-// The card's state I/O, mixed into the card's prototype.
+// The card's state read path, mixed into the card's prototype.
 //
-// Two jobs: (1) read the device's *true* state via the "get wled with cct"
-// HA script and keep it in sync as things change anywhere (sibling cards,
-// the WLED app, other dashboards), and (2) persist the last state the card
-// sent to localStorage so a refresh restores it. The HA entity read-back
-// is lossy for the raw multi-channel writes we make, so it's only a
-// fallback — the /json/state fetch is the source of truth.
+// One job: adopt the light entity's attributes into the card's working state.
+// Home Assistant pushes those attributes over its own authenticated WebSocket,
+// so `set hass` fires whenever the device changes anywhere — a sibling card, the
+// WLED app, an automation — and this is the whole sync mechanism.
+//
+// It used to be far more than this. Because the old entity sat in `color_temp`
+// mode it could not report the raw multi-channel writes the card made, so the
+// card bypassed it: an HA script read /json/state, a second ws:// socket direct
+// to the ESP delivered change notifications, a device-registry lookup found the
+// host for that socket, and a tiered poll caught what the socket missed (it
+// could not exist on an HTTPS dashboard). All of that was compensation for a
+// lossy read. The rgbcct_wled integration's RGBWW entity reports colour,
+// white and temperature faithfully, so none of it is needed.
 
-import { baseEntity } from '../entities.js';
-
-// The HA script this card calls to read WLED's true live state.
-const GET_SCRIPT = 'get_wled_with_cct';
+import { coldWarmToWhiteCct, whiteCctToColdWarm } from '../color.js';
 
 export const syncMixin = {
-  fetchStateOnce() {
-    if (this._fetched || !this._hass || !this.config) return;
-
-    this._fetched = true;
-    this.fetchWledState();
-  },
-
-  // Ask the "get wled with cct" HA script for the device's live state
-  // and adopt it. This is the true source of truth (reflects changes
-  // made outside the card); localStorage/entity are only fallbacks used
-  // until this resolves, or if WLED/the script is unreachable.
-  async fetchWledState() {
-    if (!this._hass) return;
-
-    // Only one fetch in flight; if another is requested meanwhile, run
-    // it once this one finishes (so a change during the request isn't
-    // lost).
-    if (this._fetching) {
-      this._refetchQueued = true;
-      return;
-    }
-
-    this._fetching = true;
-    this._lastFetchAt = Date.now();
-
-    try {
-      const result = await this._hass.callWS({
-        type: 'call_service',
-        domain: 'script',
-        service: GET_SCRIPT,
-        service_data: { light_entity: this.config.entity },
-        return_response: true,
-      });
-
-      const wled = result?.response;
-      if (!wled) return;
-
-      // The user may have started interacting while this was in flight;
-      // if so, their input wins — drop the fetched result.
-      if (this._wheelActive || Date.now() < (this._holdUntil || 0)) return;
-
-      const toNumberOrDefault = (value, fallback) => {
-        const parsed = Number(value);
-        return Number.isFinite(parsed) ? parsed : fallback;
-      };
-
-      this.bri = toNumberOrDefault(wled.bri, this.bri);
-      this.w = toNumberOrDefault(wled.w, this.w);
-      this.cct = toNumberOrDefault(wled.cct, this.cct);
-      this.setRgb(
-        toNumberOrDefault(wled.r, this.r),
-        toNumberOrDefault(wled.g, this.g),
-        toNumberOrDefault(wled.b, this.b),
-      );
-
-      // Per-segment list for the master's children view. The script
-      // sends it JSON-encoded; HA may hand it back already parsed.
-      let segments = wled.segments;
-      if (typeof segments === 'string') {
-        try {
-          segments = JSON.parse(segments);
-        } catch (e) {
-          segments = null;
-        }
-      }
-      if (Array.isArray(segments)) this._segments = segments;
-
-      // Live device state wins over the lossy entity read-back.
-      this._stateIsOwned = true;
-      this.persistState();
-      this.updateUI();
-    } catch (e) {
-      // WLED offline or the get script isn't set up — keep whatever
-      // localStorage/the entity gave us.
-    } finally {
-      this._fetching = false;
-      if (this._refetchQueued) {
-        this._refetchQueued = false;
-        this.refetchThrottled();
-      }
-    }
-  },
-
-  // Entities whose HA state changes should make this card re-read the
-  // live device state: the whole WLED device (group entity + every
-  // segment entity), so a change surfaced on any of them triggers a
-  // re-fetch. NOTE: this only catches CCT/brightness — because the
-  // light sits in color_temp mode (we always send cct), HA never
-  // surfaces rgb changes on any of these entities, so pure colour
-  // changes are caught by the poll fallback, not this trigger.
-  watchedEntities() {
-    const entity = this.config.entity;
-    const base = baseEntity(entity);
-
-    // The group entity and every one of its segments all share this base,
-    // so a single baseEntity() comparison catches the whole device.
-    const states = this._hass?.states || {};
-    const ids = Object.keys(states).filter((entityId) => baseEntity(entityId) === base);
-
-    return ids.length ? ids : [entity];
-  },
-
-  // HA pushes entity updates to every connected frontend, so when the
-  // device changes anywhere (a sibling card, the WLED app, another
-  // dashboard, even another device) the watched entity's last_updated
-  // moves. Use that as a trigger to re-read the true /json/state — the
-  // entity attributes themselves are too lossy to adopt directly.
-  syncOnEntityChange() {
-    // The initial load is handled by fetchStateOnce().
-    if (!this._fetched) return;
-
-    this._lastSeen = this._lastSeen || {};
-
-    let changed = false;
-
-    for (const id of this.watchedEntities()) {
-      const lastUpdated = this._hass?.states?.[id]?.last_updated;
-      if (!lastUpdated) continue;
-
-      // Only a move from a previously-seen value counts (skip the first
-      // sighting so we don't re-fetch immediately after the initial one).
-      if (this._lastSeen[id] !== undefined && lastUpdated !== this._lastSeen[id]) {
-        changed = true;
-      }
-      this._lastSeen[id] = lastUpdated;
-    }
-
-    if (!changed) return;
-
-    // Don't fight the user: skip while dragging or inside the post-edit
-    // hold window (the client making the change already has the state;
-    // idle clients re-fetch and reflect it).
-    if (this._wheelActive || Date.now() < (this._holdUntil || 0)) return;
-
-    this.refetchThrottled();
-  },
-
-  // Coalesce bursts of entity updates into at most one /json/state read
-  // per REFETCH_MIN_MS, re-checking the interaction guards at fire time.
-  refetchThrottled() {
-    const REFETCH_MIN_MS = 1500;
-    const wait = REFETCH_MIN_MS - (Date.now() - (this._lastFetchAt || 0));
-
-    if (wait <= 0) {
-      this.fetchWledState();
-      return;
-    }
-
-    if (this._refetchTimer) return;
-
-    this._refetchTimer = setTimeout(() => {
-      this._refetchTimer = null;
-      if (!this._wheelActive && Date.now() >= (this._holdUntil || 0)) {
-        this.fetchWledState();
-      }
-    }, wait);
-  },
-
   // Pull current values from the light entity's attributes.
   syncFromState() {
     const state = this._hass?.states?.[this.config.entity];
 
-    if (!state) return;
-
-    // Once the card has its own remembered/edited state it's the source
-    // of truth (the entity read-back is lossy for our raw WLED writes).
-    // Also skip while the user is interacting (or just did), so a
-    // background HA push doesn't snap controls back (e.g. brightness 255).
-    if (this._stateIsOwned || this._wheelActive || Date.now() < (this._holdUntil || 0)) return;
-
-    const attributes = state.attributes ?? {};
-
-    if (typeof attributes.brightness === 'number') {
-      this.bri = attributes.brightness;
+    // No state: a mistyped entity, one that has been removed, or one that has
+    // not loaded yet. There is nothing to adopt, but still fall through to the
+    // redraw — this is the card's only refresh path, and a master whose own
+    // entity is missing can still have live segment entities to list.
+    if (!state) {
+      this.updateUI();
+      return;
     }
 
-    if (Array.isArray(attributes.rgbw_color)) {
-      const [r, g, b, w] = attributes.rgbw_color;
-      this.setRgb(r, g, b);
-      this.w = w;
-    } else if (Array.isArray(attributes.rgb_color)) {
-      const [r, g, b] = attributes.rgb_color;
-      this.setRgb(r, g, b);
-    }
+    // Don't fight the user: a push that lands mid-drag, or inside the short
+    // hold window after an edit, would snap the controls back to the value the
+    // device had a moment ago. The next push after the window closes carries
+    // the settled state, so nothing is lost by skipping the adoption.
+    //
+    // The guard covers only the *adoption*, not the redraw below. Rendering
+    // always paints from the card's own state — which during a drag is exactly
+    // what the user is setting — so it cannot snap anything back, and it keeps
+    // the power toggle and the master's children list live throughout.
+    const interacting = this._wheelActive || Date.now() < (this._holdUntil || 0);
 
-    if (typeof attributes.color_temp_kelvin === 'number') {
-      const minKelvin = attributes.min_color_temp_kelvin ?? 2000;
-      const maxKelvin = attributes.max_color_temp_kelvin ?? 6535;
-      // Guard the divisor: a light reporting equal min/max (fixed color
-      // temp, or a misconfigured integration) would give 0/0 = NaN, which
-      // survives the clamp and blanks the slider / poisons the next send.
-      const span = maxKelvin - minKelvin;
-      if (span > 0) {
-        const frac = (attributes.color_temp_kelvin - minKelvin) / span;
-        this.cct = Math.round(Math.min(1, Math.max(0, frac)) * 255);
+    if (!interacting) {
+      const attributes = state.attributes ?? {};
+
+      if (typeof attributes.brightness === 'number') {
+        this.bri = attributes.brightness;
+      }
+
+      // Absent while the light is off — HA drops colour attributes then.
+      // Keeping the card's current values in that case means turning the light
+      // back on shows what it had, rather than a black swatch.
+      if (Array.isArray(attributes.rgbww_color)) {
+        const [r, g, b, coldWhite, warmWhite] = attributes.rgbww_color;
+        this.setRgb(r, g, b);
+
+        // Adopt the whites only if the device is showing something the card is
+        // NOT already holding. The cold/warm pair carries temperature as a
+        // ratio, so decoding it back to (w, cct) loses precision at low white —
+        // enough to move the slider a sixth of its travel at white=3, and that
+        // drifted value is what the next edit writes back (see color.js).
+        //
+        // Re-encoding what the card holds and comparing is exact: an identical
+        // pair means the device agrees with the card and there is nothing to
+        // learn from decoding it. Only a genuine difference — someone changed
+        // the light elsewhere — is worth the lossy conversion.
+        const [heldCold, heldWarm] = whiteCctToColdWarm(this.w, this.cct);
+        if (heldCold !== coldWhite || heldWarm !== warmWhite) {
+          // Pass the current cct so an all-zero white pair leaves the slider
+          // alone instead of snapping it (see coldWarmToWhiteCct).
+          ({ w: this.w, cct: this.cct } = coldWarmToWhiteCct(coldWhite, warmWhite, this.cct));
+        }
       }
     }
 
     this.updateUI();
-  },
-
-  storeKey() {
-    return `rgbcct-light-card:${this.config.entity}`;
-  },
-
-  // Restore the last state this card sent (survives page refreshes).
-  restoreState() {
-    try {
-      const raw = localStorage.getItem(this.storeKey());
-      if (!raw) return;
-
-      const saved = JSON.parse(raw);
-      const isNumber = (value) => typeof value === 'number' && isFinite(value);
-
-      if (isNumber(saved.h)) this.h = saved.h;
-      if (isNumber(saved.s)) this.s = saved.s;
-      if (isNumber(saved.v)) this.v = saved.v;
-      if (isNumber(saved.satR)) this.satR = saved.satR;
-      if (isNumber(saved.bri)) this.bri = saved.bri;
-      if (isNumber(saved.w)) this.w = saved.w;
-      if (isNumber(saved.cct)) this.cct = saved.cct;
-
-      // We have our own state now; the entity read-back must not stomp it.
-      this._stateIsOwned = true;
-    } catch (e) {
-      // localStorage unavailable (private mode etc.) — just skip.
-    }
-  },
-
-  // Remember the current state so a refresh can restore it.
-  persistState() {
-    try {
-      localStorage.setItem(
-        this.storeKey(),
-        JSON.stringify({
-          h: this.h,
-          s: this.s,
-          v: this.v,
-          satR: this.satR,
-          bri: this.bri,
-          w: this.w,
-          cct: this.cct,
-        }),
-      );
-    } catch (e) {
-      // Ignore write failures.
-    }
   },
 };

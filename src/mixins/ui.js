@@ -65,10 +65,10 @@ export const uiMixin = {
     this.updateSliderTracks();
     this.updateColorPicker();
 
+    // Both read live entity state rather than this card's working state, so
+    // they belong to every refresh — including one triggered by a local edit,
+    // which can change which segments are lit.
     this.updateChildren();
-
-    // A fresh fetch can change which segments are lit; keep the toggle
-    // (master = any segment on) in step with it, not just with hass pushes.
     this.syncToggle();
   },
 
@@ -92,10 +92,12 @@ export const uiMixin = {
     this.syncToggle();
   },
 
-  // The header swatch normally shows the card's colour (seg 0 on a
-  // master). When a master's segments aren't homogeneous, it becomes
-  // a rainbow disc instead — an at-a-glance "these differ" cue, paired
-  // with the "Mixed" chip for anyone who can't read the colour alone.
+  // The header swatch normally shows the card's colour — on a master, that is
+  // whatever the group entity reports, which is the first *lit* segment
+  // (`models.primary_segment`), not segment 0. When a master's segments aren't
+  // homogeneous it becomes a rainbow disc instead — an at-a-glance "these
+  // differ" cue, paired with the "Mixed" chip for anyone who can't read the
+  // colour alone.
   updateSwatch() {
     const mixed = this.isMaster() && this.segmentsAreMixed();
 

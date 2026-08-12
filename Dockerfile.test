@@ -1,0 +1,37 @@
+# syntax=docker/dockerfile:1
+
+# Runs the FULL Python test suite — the pure tier AND the HA-harness tier — on Linux,
+# because Home Assistant cannot be imported on Windows. Rationale, and why this uses
+# COPY rather than a bind mount: tests/README.md
+#
+# .dockerignore trims the build context to the four paths COPYed below; on a network
+# share that matters, because every file in the context is read over the wire.
+
+# Must satisfy the `requires_python` of the harness pinned in requirements_test.txt.
+# You do not have to trust this comment: pip refuses to install a release whose
+# requires_python is unmet, so a mismatch fails the build loudly on the next line.
+# That is why the version is duplicated here and nowhere else — this copy is checked
+# automatically, a copy in a script would not be.
+ARG PYTHON_VERSION=3.14
+FROM python:${PYTHON_VERSION}-slim
+
+# No build toolchain needed: every dependency in this tree has a cp314 manylinux
+# wheel, verified by building without one. (Do not "helpfully" add build-essential
+# back — it was here originally and cost 430 MB for nothing. The package that DOES
+# need compiling, bluetooth-data-tools, is wheel-less only on Windows.)
+
+WORKDIR /app
+
+# Dependency layer FIRST, on its own: it is invalidated only when the pin changes,
+# so the expensive Home Assistant install stays cached across ordinary source edits.
+COPY requirements_test.txt ./
+RUN pip install --no-cache-dir -r requirements_test.txt
+
+# Source layer LAST: the only layer a code edit invalidates, so rebuilds are ~1s.
+# The layout must mirror the repo — tests/conftest.py derives the repo root as
+# parents[1] of tests/, and the harness tests import custom_components.rgbcct_wled.*
+COPY pytest.ini ./
+COPY custom_components/ ./custom_components/
+COPY tests/ ./tests/
+
+CMD ["pytest", "-q"]

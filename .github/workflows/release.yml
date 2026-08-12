@@ -1,0 +1,165 @@
+name: Release
+
+# Cutting a release is `git tag v0.2.0 && git push origin v0.2.0`. Everything
+# below is what that tag triggers.
+#
+# The card bundle is a build artifact and `dist/` is gitignored, so a release
+# asset is the only way a user can get the card without installing Node. It is
+# also where HACS looks: for a dashboard/plugin repository HACS searches `dist/`
+# on the default branch, then the latest release's assets, then the repo root —
+# so attaching the file here is what would make a HACS "Dashboard" install work,
+# should the card ever be published that way. The integration half needs none of
+# this; HACS downloads `custom_components/rgbcct_wled/` straight from the tag.
+#
+# THREE JOBS, AND THE SPLIT IS THE POINT. `npm ci` runs lifecycle scripts from
+# the whole dev tree — vite, vitest, eslint, prettier, happy-dom and transitives.
+# The published asset is a file the README tells users to load as a Lovelace
+# resource, so it executes on every dashboard load in their instance; whatever
+# builds it should hold the weakest credential that still works. So `checks` and
+# `build` are read-only, and `publish` — the only job with `contents: write` —
+# checks nothing out and installs nothing. It downloads an artifact and calls one
+# command.
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Read-only at workflow scope, so a job added later inherits the harmless
+# default rather than write. Only `publish` below escalates.
+#
+# Not `{}`: a called workflow's permissions are capped by its caller's, and
+# checks.yml needs `contents: read` to check out.
+permissions:
+  contents: read
+
+jobs:
+  # The same gates that run on every push to main/dev, so a tag cannot publish
+  # something the branch never proved green.
+  checks:
+    uses: ./.github/workflows/checks.yml
+
+  build:
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Keeps the job's token out of .git/config, where an `npm ci`
+          # postinstall script could read it. Nothing here pushes with git.
+          # The input's own default is `true`, so this line does real work.
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          # The project's Node floor, not the action's runtime — see checks.yml.
+          node-version: '20'
+          cache: npm
+
+      # Fail before building rather than after publishing a mislabelled asset.
+      # The bundle logs `RGBCCT-LIGHT-CARD v<version>` to the browser console
+      # from package.json, and Home Assistant reads the integration's version
+      # from manifest.json — so a tag that disagrees with either produces a
+      # build that misreports itself, and bug reports naming a version that
+      # never existed. One tag ships both halves, so they move in lockstep.
+      #
+      # package-lock.json carries the version twice and npm rewrites both only
+      # on `npm install`. Bumping package.json alone leaves them stale, which no
+      # other check would notice.
+      - name: Check the tag matches every version file
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          card=$(node -p "require('./package.json').version")
+          integration=$(node -p "require('./custom_components/rgbcct_wled/manifest.json').version")
+          lock_root=$(node -p "require('./package-lock.json').version")
+          lock_package=$(node -p "require('./package-lock.json').packages[''].version")
+
+          status=0
+          for pair in "package.json:$card" \
+                      "manifest.json:$integration" \
+                      "package-lock.json:$lock_root" \
+                      "package-lock.json (packages):$lock_package"; do
+            if [ "${pair#*:}" != "$tag" ]; then
+              echo "::error::tag $GITHUB_REF_NAME disagrees with ${pair%%:*} (${pair#*:})"
+              status=1
+            fi
+          done
+          exit $status
+
+      # The Home Assistant floor is stated twice for two audiences: hacs.json
+      # enforces it at install time, the README explains it to a human. Nothing
+      # but this ties them together, and a floor that rises in one place only is
+      # worse than one stated nowhere — HACS would refuse an install the docs
+      # promise works, or allow one they say it does not.
+      - name: Check the README states the Home Assistant floor from hacs.json
+        run: |
+          floor=$(node -p "require('./hacs.json').homeassistant")
+
+          # hacs.json needs three components; prose reads better without a
+          # trailing .0, so match the trimmed form the README actually uses.
+          #
+          # Anchored on the surrounding prose and terminated by a non-digit or
+          # end of line, because a bare substring match is wrong in both
+          # directions: a floor of 2025.1 would be satisfied by a README saying
+          # 2025.10. Dots are escaped so grep -E does not treat them as
+          # wildcards and accept 2024X11.
+          escaped=$(printf '%s' "${floor%.0}" | sed 's/\./\\./g')
+
+          if ! grep -qE "Home Assistant ${escaped}([^0-9]|\$)" README.md; then
+            echo "::error::hacs.json requires HA ${floor} but README.md does not state ${floor%.0} as the floor"
+            exit 1
+          fi
+
+      - run: npm ci
+      - run: npm run build
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: card-bundle
+          path: dist/rgbcct-light-card.js
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      # No checkout and no install: this job holds the only write-scoped token
+      # in the workflow, so it runs no third-party code at all.
+      #
+      # SHA-pinned rather than tagged, and it is the ONLY action pinned in this
+      # repo — deliberately. A tag is mutable, so `@v8` would be a standing
+      # promise to run whatever that tag points at on the day the job runs. That
+      # only matters where a compromise would be worth something, and this is the
+      # sole action reachable from a job holding `contents: write`. The other four
+      # (`checkout`, `setup-node`, `setup-python`, `upload-artifact`) all run in
+      # read-only jobs, where pinning buys little and costs a bump every time
+      # they release.
+      #
+      # Bumping this means re-resolving the SHA, so verify it against
+      # api.github.com rather than copying a version number: the trailing comment
+      # is the only human-readable clue to what the hash is.
+      #
+      # v8 keeps the behaviour this job depends on: an artifact fetched **by
+      # name** extracts straight into the path (default `$GITHUB_WORKSPACE`), not
+      # into a subdirectory — so the file lands at `./rgbcct-light-card.js`,
+      # exactly what `gh release create` is handed below.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: card-bundle
+
+      # The asset filename must stay exactly `rgbcct-light-card.js` — HACS
+      # matches a plugin's JS file against the repository name, and users paste
+      # it into a Lovelace resource URL. Renaming it breaks both.
+      #
+      # --verify-tag refuses to invent a release for a ref that is not a real
+      # pushed tag, so a typo fails instead of publishing under the wrong name.
+      - name: Publish the release with the card bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "$GITHUB_REF_NAME" rgbcct-light-card.js --verify-tag --generate-notes

@@ -95,6 +95,65 @@ export function wheelWhiteGradient() {
   return `radial-gradient(circle at center, ${stops.join(', ')})`;
 }
 
+// -- the white/cct <-> cold/warm boundary --------------------------------
+//
+// The card thinks in WLED's model: one white channel `w` (0-255) plus a
+// separate `cct` (0-255). Home Assistant's RGBWW light carries cold-white and
+// warm-white instead, encoding temperature as their *ratio* and white level as
+// their *sum* — which is what lets one entity hold colour and temperature at
+// once (`color_temp` mode cannot, and that lossiness is why the card used to
+// bypass the entity entirely).
+//
+// Polarity, verified on device: WLED cct=0 is WARM (~2000 K), cct=255 is COLD
+// (~6500 K). HA orders rgbww_color as (r, g, b, cold_white, warm_white).
+//
+// These mirror `white_cct_to_cold_warm` / `cold_warm_to_white_cct` in
+// custom_components/rgbcct_wled/color.py so both sides of the boundary agree.
+// The integration's copy is the authoritative one (it is what reaches the LEDs);
+// this copy exists so the card can write and read the same encoding.
+//
+// **The round trip is LOSSY, and badly so at low white.** Temperature is carried
+// as the cold/warm ratio, so its resolution is the white level: the recovered
+// cct can be out by up to ~128/white. Measured through this pair:
+//
+//     white   1 -> cct 127 comes back as   0   (fully warm)
+//     white   3 -> cct 127 comes back as  85
+//     white   8 -> worst drift 16
+//     white 128 -> worst drift 1
+//
+// This is not cosmetic. `wled.js` feeds `card.cct` straight back to the device
+// on the next edit, so a drifted readback is a *write input* — raise white from
+// 0 to 3 at neutral and the CCT slider lurches a sixth of its travel toward
+// warm. The old script path kept `w` and `cct` independent and had no such loss,
+// so this is a regression introduced by the RGBWW encoding.
+//
+// The physics is unavoidable in that encoding; adopting the lossy value is not.
+// `sync.js` only adopts these whites when they differ from what the card already
+// holds — see the consistency check there.
+//
+// (Separately, and far smaller: this pair can differ from the Python one by 1,
+// because Python's round() breaks ties to even and Math.round() breaks them
+// upward.)
+
+export function whiteCctToColdWarm(w, cct) {
+  return [Math.round((w * cct) / 255), Math.round((w * (255 - cct)) / 255)];
+}
+
+// `previousCct` is returned when both whites are zero: with no white lit the
+// temperature is indeterminate, and snapping the slider to an arbitrary value
+// would lose the user's setting — the same reasoning that keeps hue when value
+// is zero in setRgb(). The total is capped at 255 (WLED's single white channel
+// cannot hold more) while cct comes from the *uncapped* ratio, so an oversized
+// pair scales down proportionally instead of clipping.
+export function coldWarmToWhiteCct(coldWhite, warmWhite, previousCct) {
+  const total = coldWhite + warmWhite;
+
+  return {
+    w: Math.min(255, total),
+    cct: total > 0 ? Math.round((coldWhite / total) * 255) : previousCct,
+  };
+}
+
 export function rgbToHsv(r, g, b) {
   r /= 255;
   g /= 255;

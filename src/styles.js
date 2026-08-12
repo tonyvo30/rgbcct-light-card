@@ -9,6 +9,23 @@ export function addStyles(card) {
       padding: 16px;
     }
 
+    /* Fallback for the misconfigured-entity notice. \`ha-alert\` is Home
+       Assistant's own element and styles itself — but \`:not(:defined)\` matches
+       a custom element the browser has never been told about, so if a future
+       frontend drops or renames it the message still reads as an error instead
+       of as unstyled body text. This is the one place the card must not fail
+       quietly: it exists to explain a failure. */
+    rgbcct-light-card ha-alert:not(:defined) {
+      display: block;
+      margin: 16px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      border-left: 4px solid var(--error-color, #db4437);
+      background: var(--secondary-background-color, #f5f5f5);
+      color: var(--primary-text-color);
+      font-size: 0.95em;
+    }
+
     rgbcct-light-card .header {
       display: flex;
       align-items: center;

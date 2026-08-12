@@ -1,4 +1,7 @@
-# Build output and dependencies — never format these.
-dist/
-node_modules/
+# Prettier reads .gitignore as well as this file (its --ignore-path default is
+# [.gitignore, .prettierignore]), so everything gitignored is already excluded
+# and must NOT be repeated here.
+#
+# package-lock.json is the exception that earns this file: npm owns its
+# formatting, and it is tracked, so .gitignore does not cover it.
 package-lock.json

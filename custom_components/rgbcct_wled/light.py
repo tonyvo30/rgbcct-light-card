@@ -1,0 +1,265 @@
+"""RGBWW light entities for a WLED device.
+
+One entity per WLED segment plus a whole-device "group" entity — the card's
+N segments -> N+1 convention. Each is a standard `ColorMode.RGBWW` light, so
+Home Assistant itself (scenes, voice, automations, the native light card) can
+drive colour + temperature — the custom card is just one more client.
+
+Colour temperature rides the cold/warm-white channels (`color.py`); the write
+path converts back to WLED's `w`+`cct` so the on-the-wire payload is unchanged
+from the original "send wled with cct" script.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
+from homeassistant.components.light import (
+    ATTR_BRIGHTNESS,
+    ATTR_RGBWW_COLOR,
+    ColorMode,
+    LightEntity,
+)
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+from .color import cold_warm_to_white_cct, white_cct_to_cold_warm
+from .const import DOMAIN
+from .coordinator import RgbcctWledCoordinator
+from .models import DEFAULT_CCT, SegmentState, WledState
+from .payload import build_turn_off_payload, build_turn_on_payload
+
+if TYPE_CHECKING:
+    from . import RgbcctWledConfigEntry
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: "RgbcctWledConfigEntry",
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Create the group light + one light per current segment."""
+    coordinator = entry.runtime_data
+    entities: list[RgbcctWledLight] = [RgbcctWledLight(coordinator, segment_id=None)]
+    entities.extend(
+        RgbcctWledLight(coordinator, segment_id=segment.segment_id)
+        for segment in coordinator.data.segments
+    )
+    async_add_entities(entities)
+
+
+class RgbcctWledLight(CoordinatorEntity[RgbcctWledCoordinator], LightEntity):
+    """A WLED segment (or the whole device) as an RGBWW light."""
+
+    _attr_has_entity_name = True
+    _attr_supported_color_modes = {ColorMode.RGBWW}
+    _attr_color_mode = ColorMode.RGBWW
+
+    def __init__(self, coordinator: RgbcctWledCoordinator, segment_id: int | None) -> None:
+        """segment_id None -> the whole-device group entity."""
+        super().__init__(coordinator)
+        self._segment_id = segment_id
+        self._is_group = segment_id is None
+
+        if self._is_group:
+            self._attr_name = None  # -> entity_id light.<device>
+            self._attr_unique_id = f"{coordinator.mac}_group"
+        else:
+            self._attr_name = f"Segment {segment_id}"  # -> light.<device>_segment_<n>
+            self._attr_unique_id = f"{coordinator.mac}_segment_{segment_id}"
+
+        self._attr_device_info = DeviceInfo(
+            # identifiers (NOT connections={CONNECTION_NETWORK_MAC}) so this stays
+            # a distinct device from the native WLED integration — see the plan.
+            identifiers={(DOMAIN, coordinator.mac)},
+            name=coordinator.device_name,
+            manufacturer="WLED",
+            model=coordinator.model,
+            sw_version=coordinator.sw_version,
+            configuration_url=f"http://{coordinator.host}",
+        )
+
+    # -- reads --------------------------------------------------------------
+
+    @property
+    def _segment(self) -> SegmentState | None:
+        """The segment this entity reads from.
+
+        **Contract (chosen, not incidental): the group reports the first *lit*
+        segment** — see `WledState.primary_segment`, which owns that rule so it
+        can be tested without Home Assistant.
+
+        This used to be segment 0 unconditionally, which contradicted `is_on`:
+        the group is on when *any* segment is lit, so with segment 0 off and
+        segment 1 pink the entity reported on + segment 0's stored orange, and
+        every consumer (this card's master swatch, HA's own light card, scenes)
+        showed a colour nothing on the strip was displaying. Found on hardware.
+        """
+        state: WledState | None = self.coordinator.data
+        if state is None or not state.segments:
+            return None
+        if self._is_group:
+            return state.primary_segment()
+        return state.segment(self._segment_id)  # type: ignore[arg-type]
+
+    @property
+    def available(self) -> bool:
+        """Unavailable if the device is unreachable or the segment is gone."""
+        return super().available and self._segment is not None
+
+    @property
+    def is_on(self) -> bool | None:
+        """On/off from the device power flag AND the segment power flag.
+
+        The group is on when the device is on and *any* segment is on (so the
+        master reflects "any segment lit"), gated by the device power.
+        """
+        state = self.coordinator.data
+        if state is None:
+            return None
+        if self._is_group:
+            return state.on and any(segment.on for segment in state.segments)
+        segment = self._segment
+        return bool(state.on and segment.on) if segment is not None else None
+
+    @property
+    def brightness(self) -> int | None:
+        """Segment brightness (WLED seg.bri) — unscaled from the colour.
+
+        **Known limitation.** WLED's real output is `master_bri * seg.bri / 255`,
+        and this reports only `seg.bri`, so while the device master is below 255
+        the number overstates actual output (master 40% + seg 255 reads as 255 and
+        lights at 40%). A *group* turn-on pins the master to full and restores
+        truth; a *segment* turn-on deliberately leaves the master alone, because
+        writing a device-global from a segment entity is worse (see `payload.py`).
+
+        Reporting the true product instead was considered and rejected: a segment
+        could then never reach 255 while the master is low — `seg.bri` cannot
+        exceed 255 — so HA would set full and read back the capped value, snapping
+        the slider. The group entity is the device-wide control, so device-wide
+        state resetting there is the coherent contract.
+        """
+        segment = self._segment
+        return segment.brightness if segment is not None else None
+
+    @property
+    def capability_attributes(self) -> dict[str, Any]:
+        """Static entity metadata, plus what this entity drives.
+
+        Every entity says positively which kind it is: a segment carries
+        `segment_id`, the group carries `is_group`. Never rely on one of them
+        being *absent* to infer the other — an absence cannot be distinguished
+        from an entity that has not loaded, and the card guessing "group" from a
+        missing attribute is how a segment card ends up with device-wide writes.
+        (`is_group` was added after exactly that: a master card created while the
+        device was unreachable had no way to know it was a master, so it rendered
+        as a segment with no children list.)
+
+        `segment_id` also labels and orders the master's children list.
+
+        **Why this and not `extra_state_attributes` — load-bearing, not tidiness.**
+        Home Assistant merges `extra_state_attributes` into a state only while the
+        entity is *available*; capability attributes are included either way. Both
+        markers are immutable for the entity's lifetime, so they belong here on the
+        merits — and putting them here means an ESP reboot cannot make a segment
+        stop looking like a segment. It previously could: the attribute vanished,
+        the card read "no segment_id" as "this is the whole-device master", and
+        every segment card silently re-rendered as a device-wide control.
+
+        The guarantee is stronger than "survives unavailability". Capability
+        attributes are persisted to the entity registry when the entity is added
+        (`entity_platform.py`, `capabilities=entity.capability_attributes`) and are
+        seeded back into *restored* states (`entity_registry.py`, the
+        `ATTR_RESTORED` path). So the markers are also present when this
+        integration has not set up at all — an HA restart with the device offline,
+        or a `ConfigEntryNotReady` retry loop. They are readable in every state in
+        which a card can be rendered, which is what lets the card treat "neither
+        marker" as a genuine misconfiguration rather than as a maybe.
+
+        Moving these to `extra_state_attributes` would silently re-create the bug
+        above, and nothing would fail at import or start-up to warn you.
+
+        This attribute exists at all because **entity ids cannot carry the
+        information reliably.** Home Assistant derives an id from the device's
+        name once, at creation, and never revises it — so assigning the device to
+        an area, or renaming it, leaves earlier siblings on the old pattern and
+        newer ones on the new one. A card matching `<group_id>_segment_<n>` then
+        silently stops seeing some of its own segments (found on hardware: a
+        device moved to an area gained `light.bedroom_wled_…_segment_2` alongside
+        two pre-existing `light.wled_…_segment_<n>` entities).
+        """
+        attributes = dict(super().capability_attributes or {})
+        if self._is_group:
+            attributes["is_group"] = True
+        else:
+            attributes["segment_id"] = self._segment_id
+        return attributes
+
+    @property
+    def rgbww_color(self) -> tuple[int, int, int, int, int] | None:
+        """(r, g, b, cold_white, warm_white) derived from WLED w+cct."""
+        segment = self._segment
+        if segment is None:
+            return None
+        cold_white, warm_white = white_cct_to_cold_warm(segment.w, segment.cct)
+        return (segment.r, segment.g, segment.b, cold_white, warm_white)
+
+    # -- writes -------------------------------------------------------------
+
+    @property
+    def _target_ids(self) -> list[int]:
+        """Segments a write touches: every segment for the group, else just one.
+
+        Guarded against a missing coordinator payload: a service call can race a
+        failed first refresh, and an empty target list is a harmless no-op where
+        an attribute error would surface as a stack trace in the log.
+        """
+        if not self._is_group:
+            return [self._segment_id]  # type: ignore[list-item]
+        state = self.coordinator.data
+        return [segment.segment_id for segment in state.segments] if state else []
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Apply whatever Home Assistant supplied, and power on.
+
+        **Only the channels actually requested are written.** Reconstructing the
+        omitted ones from current state looks harmless but is not: the group
+        reads from one segment (`primary_segment`) while its writes fan out to
+        *every* segment — so a bare turn-on (a UI toggle, a scene, a voice
+        command) would stamp that one segment's colour over all the others,
+        destroying per-segment state on the device. Anything not requested is
+        left off the wire entirely.
+
+        The card enforces the same rule on its side: it sends only the channel
+        the user edited (`src/wled.js`). Writing everything defeats this guard
+        without tripping it.
+
+        Turning on also powers the device on (Pattern 5): a lit segment needs the
+        device on to actually show, and the group turns every segment on. It all
+        goes in one POST.
+        """
+        wled_color = None
+        if ATTR_RGBWW_COLOR in kwargs:
+            red, green, blue, cold_white, warm_white = kwargs[ATTR_RGBWW_COLOR]
+            segment = self._segment
+            white, cct = cold_warm_to_white_cct(
+                cold_white, warm_white, segment.cct if segment else DEFAULT_CCT
+            )
+            wled_color = (red, green, blue, white, cct)
+
+        await self.coordinator.async_command(
+            build_turn_on_payload(
+                self._target_ids,
+                is_group=self._is_group,
+                wled_color=wled_color,
+                brightness=kwargs.get(ATTR_BRIGHTNESS),
+            )
+        )
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Power off (see `payload.build_turn_off_payload` for the group rule)."""
+        await self.coordinator.async_command(
+            build_turn_off_payload(self._target_ids, is_group=self._is_group)
+        )

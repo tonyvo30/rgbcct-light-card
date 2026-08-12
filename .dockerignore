@@ -1,0 +1,21 @@
+# Keep the build context minimal: node_modules/ alone would dwarf everything
+# Dockerfile.test actually needs, and the whole context is packaged and sent to the
+# daemon before the build starts. That cost is worse when the checkout sits on a
+# network share, which is common for this project (see Dockerfile.test).
+#
+# Strategy: ignore everything, then re-include exactly what gets COPYed.
+*
+
+!requirements_test.txt
+!pytest.ini
+!custom_components/
+!tests/
+
+# ...but never ship Python caches. They can carry bytecode compiled by the Windows
+# interpreter, which has no business inside a Linux image.
+**/__pycache__
+**/*.pyc
+
+# tests/ holds the card's vitest suites too. The image runs pytest only, so they
+# are context (and image layers) spent on files nothing in here will execute.
+tests/card/

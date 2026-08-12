@@ -1,0 +1,4 @@
+# HA-harness test tier. Installed by Dockerfile.test only -- NOT on Windows, and
+# not into the venv used by `npm run test:python`. Pinned exact on purpose; do not
+# add pytest here. Why, and how to re-pin: tests/README.md
+pytest-homeassistant-custom-component==0.13.339
