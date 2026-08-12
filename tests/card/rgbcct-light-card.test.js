@@ -15,6 +15,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import '../../src/rgbcct-light-card.js';
+import { ELEMENT_SELECTORS } from '../../src/render.js';
 
 const GROUP = 'light.strip';
 
@@ -240,7 +241,12 @@ describe('misconfigured entity', () => {
 // can be perfect while every reference is null, and the card would then render
 // once and never update again. So these check the properties, not the nodes.
 describe('published element references', () => {
-  const COLOUR_CONTROLS = ['brightness', 'wheel', 'wheelHandle', 'value', 'white', 'cctInput'];
+  // Driven from the map itself rather than a hand-copied list. A hand-copied one
+  // silently under-asserted: it named nine of the ten entries, so a typo in
+  // `wheelShade`'s selector passed the whole suite while the wheel's dimming
+  // overlay quietly stopped tracking the Value slider.
+  const ALL = Object.keys(ELEMENT_SELECTORS);
+  const published = (card) => ALL.filter((property) => card[property] !== null);
 
   beforeEach(() => {
     document.body.innerHTML = '';
@@ -249,13 +255,11 @@ describe('published element references', () => {
   it('publishes every control the full layout builds', () => {
     const card = mountCard();
 
-    for (const property of [...COLOUR_CONTROLS, 'colorInput', 'toggle', 'childrenList']) {
-      expect(card[property], property).not.toBeNull();
-    }
+    expect(published(card).sort()).toEqual([...ALL].sort());
   });
 
   it('drops references to controls the next layout does not build', () => {
-    // The stale-reference case the clear exists for: compact mode replaces
+    // The case the publish-on-every-path rule exists for: compact mode replaces
     // innerHTML with a layout that has no colour controls, so holding the
     // previous ones would leave the UI helpers writing to detached nodes —
     // silently, since they only check for null.
@@ -264,10 +268,7 @@ describe('published element references', () => {
 
     card.toggleCompact();
 
-    for (const property of COLOUR_CONTROLS) {
-      expect(card[property], property).toBeNull();
-    }
-    expect(card.toggle).not.toBeNull();
+    expect(published(card)).toEqual(['toggle']);
   });
 
   it('leaves a segment card without a children list', () => {
@@ -278,15 +279,12 @@ describe('published element references', () => {
     hass.states[GROUP] = { state: 'on', attributes: { segment_id: 0, brightness: 200 } };
     card.hass = hass;
 
-    expect(card.childrenList).toBeNull();
-    expect(card.wheel).not.toBeNull();
+    expect(published(card).sort()).toEqual(ALL.filter((name) => name !== 'childrenList').sort());
   });
 
   it('publishes nothing when the entity is misconfigured', () => {
     const card = mountCard({ entity: 'light.typo' });
 
-    for (const property of [...COLOUR_CONTROLS, 'colorInput', 'toggle', 'childrenList']) {
-      expect(card[property], property).toBeNull();
-    }
+    expect(published(card)).toEqual([]);
   });
 });

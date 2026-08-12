@@ -18,7 +18,15 @@ const escapeText = (value) =>
 // run at different rates. Adding a control meant editing both ends, and missing
 // the null-out left the UI helpers writing to a detached node from the previous
 // layout, silently, because they only check for null.
-const ELEMENT_SELECTORS = {
+//
+// One pairing survives that collapse and cannot be removed here: these selectors
+// still have to agree with the `id="..."` literals in the markup helpers below.
+// Drift stays silent, because a `querySelector` finding nothing is
+// indistinguishable from a layout that legitimately omits that control. Hence the
+// export — the tests drive their assertions from `Object.keys`, so an entry added
+// here cannot outrun its coverage, and a selector matching nothing fails loudly
+// instead of leaving one control quietly frozen.
+export const ELEMENT_SELECTORS = {
   brightness: '#bri',
   wheel: '#wheel',
   wheelHandle: '#wheel-handle',
