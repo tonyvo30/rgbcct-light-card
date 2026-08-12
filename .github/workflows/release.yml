@@ -1,0 +1,87 @@
+name: Release
+
+# Cutting a release is `git tag v0.2.0 && git push origin v0.2.0`. Everything
+# below is what that tag triggers.
+#
+# The card bundle is a build artifact and `dist/` is gitignored, so a release
+# asset is the only way a user can get the card without installing Node. It is
+# also where HACS looks: for a dashboard/plugin repository HACS searches `dist/`
+# on the default branch, then the latest release's assets, then the repo root —
+# so attaching the file here is what would make a HACS "Dashboard" install work,
+# should the card ever be published that way. The integration half needs none of
+# this; HACS downloads `custom_components/rgbcct_wled/` straight from the tag.
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Creating a release means writing to the repository.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # The floor the README states. Kept in step with it deliberately: a
+          # release built on a newer Node than users are told to install can
+          # emit syntax the documented floor cannot parse.
+          node-version: '20'
+          cache: npm
+
+      # Fail before building rather than after publishing a mislabelled asset.
+      # The bundle logs `RGBCCT-LIGHT-CARD v<version>` to the browser console
+      # from package.json, and Home Assistant reads the integration's version
+      # from manifest.json — so a tag that disagrees with either produces a
+      # build that misreports itself, and bug reports that name a version which
+      # never existed. The two files move in lockstep because one tag ships both.
+      - name: Check the tag matches package.json and manifest.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          card=$(node -p "require('./package.json').version")
+          integration=$(node -p "require('./custom_components/rgbcct_wled/manifest.json').version")
+
+          if [ "$tag" != "$card" ] || [ "$tag" != "$integration" ]; then
+            echo "::error::tag $GITHUB_REF_NAME disagrees with package.json ($card) / manifest.json ($integration)"
+            exit 1
+          fi
+
+      # The HA-free Python tier needs a bare `pytest` and nothing else — that is
+      # the whole point of it, and running it with no Home Assistant installed is
+      # what verifies that color.py / models.py / payload.py stayed import-free.
+      #
+      # `npm run test:python` is not used here: it drives a persistent venv that
+      # exists to keep a dev machine's interpreter clean and to keep ~26k files
+      # off a Samba share. A runner is disposable and local, so neither reason
+      # applies, and the script exits 1 when the venv is absent.
+      #
+      # Pinned to the floor the code actually needs (`@dataclass(slots=True)`),
+      # not to the version Home Assistant wants — testing at the floor is what
+      # catches newer syntax slipping in. The HA-harness tier is deliberately
+      # absent: it needs Docker, and a release is not where you discover that.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - run: npm ci
+      - run: pip install pytest
+
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run test:js
+      - run: python -m pytest
+
+      - run: npm run build
+
+      # The asset filename must stay exactly `rgbcct-light-card.js` — HACS
+      # matches a plugin's JS file against the repository name, and users paste
+      # it into a Lovelace resource URL. Renaming it breaks both.
+      - name: Publish the release with the card bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/rgbcct-light-card.js --generate-notes

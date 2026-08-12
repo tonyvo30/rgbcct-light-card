@@ -24,6 +24,11 @@ export default defineConfig(({ mode }) => {
         entry: './src/rgbcct-light-card.js',
         name: 'RgbcctLightCard',
         formats: ['iife'],
+        // Fixed, with no content hash, and three things depend on the exact
+        // string: users paste it into a Lovelace resource URL that must survive
+        // rebuilds, the release workflow attaches it by name, and HACS matches a
+        // dashboard plugin's JS file against the *repository* name. Renaming the
+        // repo without renaming this would break card installs silently.
         fileName: () => 'rgbcct-light-card.js',
       },
     },
