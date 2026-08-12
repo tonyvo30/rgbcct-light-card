@@ -157,9 +157,18 @@ if (venvExists()) {
   run(baseInterpreter.command, [...baseInterpreter.args, '-m', 'venv', venvDirectory]);
 }
 
-console.log('Installing     pytest\n');
+// Majors excluded, and **kept in step with `.github/workflows/checks.yml`** —
+// whichever side floats is the side running the untested version. Pinning only
+// CI would have inverted the drift this pin exists to prevent: a venv created
+// after pytest 10 ships would put the dev machine on a major CI has never seen.
+//
+// `~=` rather than `==` so patch and minor releases still arrive; the point is
+// that a major cannot land without someone editing both files.
+const PYTEST_REQUIREMENT = 'pytest~=9.1';
+
+console.log(`Installing     ${PYTEST_REQUIREMENT}\n`);
 run(venvPythonExecutable, ['-m', 'pip', 'install', '--upgrade', 'pip']);
-run(venvPythonExecutable, ['-m', 'pip', 'install', 'pytest']);
+run(venvPythonExecutable, ['-m', 'pip', 'install', PYTEST_REQUIREMENT]);
 
 console.log('\nPython test environment ready (HA-free tier).');
 console.log(`  interpreter  ${venvPythonExecutable}`);

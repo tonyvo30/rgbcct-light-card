@@ -60,6 +60,10 @@ jobs:
 
       # Majors excluded. An unpinned install means a pytest major release lands
       # in CI the day it ships, and the first thing it would break is a release.
+      #
+      # Must match PYTEST_REQUIREMENT in scripts/setup-python-env.mjs. Pinning
+      # one side only moves the drift rather than removing it — whichever side
+      # floats becomes the one running the version nothing else has tried.
       - run: pip install "pytest~=9.1"
 
       - run: npm run lint

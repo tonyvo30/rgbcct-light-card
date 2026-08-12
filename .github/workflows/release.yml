@@ -94,10 +94,19 @@ jobs:
       - name: Check the README states the Home Assistant floor from hacs.json
         run: |
           floor=$(node -p "require('./hacs.json').homeassistant")
+
           # hacs.json needs three components; prose reads better without a
-          # trailing .0, so accept the trimmed form the README actually uses.
-          if ! grep -qF "${floor%.0}" README.md; then
-            echo "::error::hacs.json requires HA ${floor} but README.md never mentions ${floor%.0}"
+          # trailing .0, so match the trimmed form the README actually uses.
+          #
+          # Anchored on the surrounding prose and terminated by a non-digit or
+          # end of line, because a bare substring match is wrong in both
+          # directions: a floor of 2025.1 would be satisfied by a README saying
+          # 2025.10. Dots are escaped so grep -E does not treat them as
+          # wildcards and accept 2024X11.
+          escaped=$(printf '%s' "${floor%.0}" | sed 's/\./\\./g')
+
+          if ! grep -qE "Home Assistant ${escaped}([^0-9]|\$)" README.md; then
+            echo "::error::hacs.json requires HA ${floor} but README.md does not state ${floor%.0} as the floor"
             exit 1
           fi
 
@@ -119,7 +128,16 @@ jobs:
     steps:
       # No checkout and no install: this job holds the only write-scoped token
       # in the workflow, so it runs no third-party code at all.
-      - uses: actions/download-artifact@v4
+      #
+      # SHA-pinned rather than tagged, and it is the ONLY action pinned in this
+      # repo — deliberately. A tag is mutable, so `@v4` is a standing promise to
+      # run whatever that tag points at on the day the job runs. That only
+      # matters where a compromise would be worth something, and this is the sole
+      # action reachable from a job holding `contents: write`. The other four
+      # (`checkout`, `setup-node`, `setup-python`, `upload-artifact`) all run in
+      # read-only jobs, where pinning buys little and costs a bump every time
+      # they release.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: card-bundle
 
