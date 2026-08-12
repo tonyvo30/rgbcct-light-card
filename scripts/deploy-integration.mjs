@@ -3,7 +3,7 @@
 // HA loads integrations from <config>/custom_components/, but this repo lives at
 // <config>/www/rgbcct-light-card (so the built card is served from /local/). HA
 // can't load Python from there, and Z: is a Samba share, so a symlink/junction
-// isn't viable — hence a copy. See .claude/integration-plan.md.
+// isn't viable — hence a copy.
 //
 // The HA config root is derived as ../../ from the repo root (repo is under
 // <config>/www/); override with RGBCCT_HA_CONFIG if your layout differs.

@@ -4,7 +4,8 @@ A custom Home Assistant integration that owns all I/O with an RGBCCT WLED strip
 and exposes it as RGBWW `light` entities — one per segment plus a whole-device
 "group" light. It replaces the frontend card's two HA scripts and its browser
 `ws://` doorbell, so colour/brightness/CCT sync works (with instant push) even on
-HTTPS dashboards. See `.claude/integration-plan.md`.
+HTTPS dashboards — a browser cannot open an insecure `ws://` from an HTTPS page,
+which is what cost the old design its push channel.
 """
 
 from __future__ import annotations

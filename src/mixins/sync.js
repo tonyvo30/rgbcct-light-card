@@ -12,8 +12,7 @@
 // host for that socket, and a tiered poll caught what the socket missed (it
 // could not exist on an HTTPS dashboard). All of that was compensation for a
 // lossy read. The rgbcct_wled integration's RGBWW entity reports colour,
-// white and temperature faithfully, so none of it is needed — see
-// .claude/integration-plan.md, Phase 2.
+// white and temperature faithfully, so none of it is needed.
 
 import { coldWarmToWhiteCct, whiteCctToColdWarm } from '../color.js';
 
