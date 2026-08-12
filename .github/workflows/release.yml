@@ -45,14 +45,16 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # Keeps the job's token out of .git/config, where an `npm ci`
           # postinstall script could read it. Nothing here pushes with git.
+          # The input's own default is `true`, so this line does real work.
           persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
+          # The project's Node floor, not the action's runtime — see checks.yml.
           node-version: '20'
           cache: npm
 
@@ -113,7 +115,7 @@ jobs:
       - run: npm ci
       - run: npm run build
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: card-bundle
           path: dist/rgbcct-light-card.js
@@ -130,14 +132,23 @@ jobs:
       # in the workflow, so it runs no third-party code at all.
       #
       # SHA-pinned rather than tagged, and it is the ONLY action pinned in this
-      # repo — deliberately. A tag is mutable, so `@v4` is a standing promise to
-      # run whatever that tag points at on the day the job runs. That only
-      # matters where a compromise would be worth something, and this is the sole
-      # action reachable from a job holding `contents: write`. The other four
+      # repo — deliberately. A tag is mutable, so `@v8` would be a standing
+      # promise to run whatever that tag points at on the day the job runs. That
+      # only matters where a compromise would be worth something, and this is the
+      # sole action reachable from a job holding `contents: write`. The other four
       # (`checkout`, `setup-node`, `setup-python`, `upload-artifact`) all run in
       # read-only jobs, where pinning buys little and costs a bump every time
       # they release.
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      #
+      # Bumping this means re-resolving the SHA, so verify it against
+      # api.github.com rather than copying a version number: the trailing comment
+      # is the only human-readable clue to what the hash is.
+      #
+      # v8 keeps the behaviour this job depends on: an artifact fetched **by
+      # name** extracts straight into the path (default `$GITHUB_WORKSPACE`), not
+      # into a subdirectory — so the file lands at `./rgbcct-light-card.js`,
+      # exactly what `gh release create` is handed below.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: card-bundle
 

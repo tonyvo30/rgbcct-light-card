@@ -25,17 +25,23 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      # Action majors are kept current because GitHub retires the Node runtime
+      # an action declares (`runs: using:`) — v4/v5 here were on `node20` and
+      # were being force-run on node24 with a deprecation warning.
+      - uses: actions/checkout@v5
         with:
           # No git credential in .git/config for `npm ci`'s postinstall scripts
-          # to find. Nothing here pushes with git.
+          # to find. Nothing here pushes with git. (Still needed: the input's
+          # own default is `true`.)
           persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          # The floor the README states. Kept in step with it deliberately: a
-          # build made on a newer Node than users are told to install can emit
-          # syntax the documented floor cannot parse.
+          # ⚠ NOT related to the action-runtime deprecation above. This is the
+          # Node that runs *this project's* build and tests, and it is the floor
+          # the README tells users to install. A build made on a newer Node than
+          # that can emit syntax the documented floor cannot parse, so it stays
+          # at 20 until the README moves.
           node-version: '20'
           cache: npm
 
@@ -52,7 +58,7 @@ jobs:
       # not to the version Home Assistant wants — testing at the floor is what
       # catches newer syntax slipping in. The HA-harness tier is deliberately
       # absent: it needs Docker, and a release is not where you discover that.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.10'
 
