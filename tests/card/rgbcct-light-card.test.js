@@ -234,3 +234,59 @@ describe('misconfigured entity', () => {
     expect(card.querySelector('#children-list')).not.toBeNull();
   });
 });
+
+// renderCard publishes element references onto the card; every UI helper reads
+// them and null-checks. Asserting the DOM alone cannot see these — the markup
+// can be perfect while every reference is null, and the card would then render
+// once and never update again. So these check the properties, not the nodes.
+describe('published element references', () => {
+  const COLOUR_CONTROLS = ['brightness', 'wheel', 'wheelHandle', 'value', 'white', 'cctInput'];
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('publishes every control the full layout builds', () => {
+    const card = mountCard();
+
+    for (const property of [...COLOUR_CONTROLS, 'colorInput', 'toggle', 'childrenList']) {
+      expect(card[property], property).not.toBeNull();
+    }
+  });
+
+  it('drops references to controls the next layout does not build', () => {
+    // The stale-reference case the clear exists for: compact mode replaces
+    // innerHTML with a layout that has no colour controls, so holding the
+    // previous ones would leave the UI helpers writing to detached nodes —
+    // silently, since they only check for null.
+    const card = mountCard();
+    expect(card.wheel).not.toBeNull();
+
+    card.toggleCompact();
+
+    for (const property of COLOUR_CONTROLS) {
+      expect(card[property], property).toBeNull();
+    }
+    expect(card.toggle).not.toBeNull();
+  });
+
+  it('leaves a segment card without a children list', () => {
+    const card = document.createElement('rgbcct-light-card');
+    document.body.append(card);
+    card.setConfig({ entity: GROUP });
+    const hass = fakeHass();
+    hass.states[GROUP] = { state: 'on', attributes: { segment_id: 0, brightness: 200 } };
+    card.hass = hass;
+
+    expect(card.childrenList).toBeNull();
+    expect(card.wheel).not.toBeNull();
+  });
+
+  it('publishes nothing when the entity is misconfigured', () => {
+    const card = mountCard({ entity: 'light.typo' });
+
+    for (const property of [...COLOUR_CONTROLS, 'colorInput', 'toggle', 'childrenList']) {
+      expect(card[property], property).toBeNull();
+    }
+  });
+});

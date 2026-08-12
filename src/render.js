@@ -5,21 +5,36 @@
 const escapeText = (value) =>
   String(value).replace(/[&<>"']/g, (character) => `&#${character.charCodeAt(0)};`);
 
-// Every element reference renderCard can publish. Cleared before each layout so
-// a branch that does not build a control cannot leave the previous layout's
-// (now detached) element behind — the UI helpers all null-check, so a stale
-// reference would silently update a node that is no longer on the page.
-function clearElementReferences(card) {
-  card.brightness = null;
-  card.wheel = null;
-  card.wheelHandle = null;
-  card.wheelShade = null;
-  card.value = null;
-  card.white = null;
-  card.cctInput = null;
-  card.colorInput = null;
-  card.toggle = null;
-  card.childrenList = null;
+// Every element reference renderCard publishes, as card property -> selector.
+//
+// One list, and one function reading it, called on **every** path out of
+// renderCard including the error layout that builds none of these. That total-ness
+// is the point: a `querySelector` that finds nothing yields null, which is what
+// every UI helper already checks for, so a layout missing a control needs no
+// special handling and no branch has to know which subset applies to it.
+//
+// This replaced a pair of hand-maintained lists — one nulling the references,
+// one assigning them — which is the same trap as a listener whose add and remove
+// run at different rates. Adding a control meant editing both ends, and missing
+// the null-out left the UI helpers writing to a detached node from the previous
+// layout, silently, because they only check for null.
+const ELEMENT_SELECTORS = {
+  brightness: '#bri',
+  wheel: '#wheel',
+  wheelHandle: '#wheel-handle',
+  wheelShade: '#wheel-shade',
+  value: '#v',
+  white: '#w',
+  cctInput: '#cct',
+  colorInput: '#color-input',
+  toggle: '#toggle',
+  childrenList: '#children-list',
+};
+
+function publishElementReferences(card) {
+  for (const [property, selector] of Object.entries(ELEMENT_SELECTORS)) {
+    card[property] = card.querySelector(selector);
+  }
 }
 
 function sliderRow(label, id, value, min = 0) {
@@ -61,8 +76,6 @@ function colorWheel() {
 }
 
 export function renderCard(card) {
-  clearElementReferences(card);
-
   // A misconfigured entity replaces the whole card, the way native cards do.
   // `ha-alert` is Home Assistant's own element, so this matches the rest of the
   // dashboard; styles.js has a fallback for the case where it is not defined.
@@ -74,6 +87,10 @@ export function renderCard(card) {
         <ha-alert alert-type="error">${escapeText(problem)}</ha-alert>
       </ha-card>
     `;
+
+    // Builds none of the controls, so this drops the previous layout's
+    // references rather than publishing new ones.
+    publishElementReferences(card);
 
     return;
   }
@@ -90,8 +107,8 @@ export function renderCard(card) {
       </ha-card>
     `;
 
-    // No colour controls in compact mode; just the power toggle.
-    card.toggle = card.querySelector('#toggle');
+    // No colour controls in compact mode; only the power toggle resolves.
+    publishElementReferences(card);
 
     return;
   }
@@ -120,14 +137,5 @@ export function renderCard(card) {
     </ha-card>
   `;
 
-  card.brightness = card.querySelector('#bri');
-  card.wheel = card.querySelector('#wheel');
-  card.wheelHandle = card.querySelector('#wheel-handle');
-  card.wheelShade = card.querySelector('#wheel-shade');
-  card.value = card.querySelector('#v');
-  card.white = card.querySelector('#w');
-  card.cctInput = card.querySelector('#cct');
-  card.colorInput = card.querySelector('#color-input');
-  card.toggle = card.querySelector('#toggle');
-  card.childrenList = card.querySelector('#children-list');
+  publishElementReferences(card);
 }
