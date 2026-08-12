@@ -1,0 +1,68 @@
+name: Checks
+
+# The quality gates, defined once and called from two places: directly on
+# pushes and pull requests, and by release.yml before it publishes anything.
+#
+# They used to live only in release.yml, which meant they ran exactly once per
+# release — triggered by a tag that was already pushed and public by the time
+# anything was checked. A failure then costs a deleted tag or a burned version
+# number. Running them on the way in makes the release run a formality.
+on:
+  push:
+    # Branches only. A `v*` tag push is release.yml's trigger, and that workflow
+    # calls this one — listing tags here would run everything twice.
+    branches: [main, dev]
+  pull_request:
+  workflow_call:
+
+# Read-only. This job runs `npm ci`, which executes lifecycle scripts from the
+# whole dev tree, so it is given nothing worth stealing.
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # No git credential in .git/config for `npm ci`'s postinstall scripts
+          # to find. Nothing here pushes with git.
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          # The floor the README states. Kept in step with it deliberately: a
+          # build made on a newer Node than users are told to install can emit
+          # syntax the documented floor cannot parse.
+          node-version: '20'
+          cache: npm
+
+      # The HA-free Python tier needs a bare `pytest` and nothing else — that is
+      # the whole point of it, and running it with no Home Assistant installed is
+      # what verifies that color.py / models.py / payload.py stayed import-free.
+      #
+      # `npm run test:python` is not used here: it drives a persistent venv that
+      # exists to keep a dev machine's interpreter clean and to keep ~26k files
+      # off a Samba share. A runner is disposable and local, so neither reason
+      # applies, and the script exits 1 when the venv is absent.
+      #
+      # Pinned to the floor the code actually needs (`@dataclass(slots=True)`),
+      # not to the version Home Assistant wants — testing at the floor is what
+      # catches newer syntax slipping in. The HA-harness tier is deliberately
+      # absent: it needs Docker, and a release is not where you discover that.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - run: npm ci
+
+      # Majors excluded. An unpinned install means a pytest major release lands
+      # in CI the day it ships, and the first thing it would break is a release.
+      - run: pip install "pytest~=9.1"
+
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run test:js
+      - run: python -m pytest

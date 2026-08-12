@@ -10,27 +10,49 @@ name: Release
 # so attaching the file here is what would make a HACS "Dashboard" install work,
 # should the card ever be published that way. The integration half needs none of
 # this; HACS downloads `custom_components/rgbcct_wled/` straight from the tag.
+#
+# THREE JOBS, AND THE SPLIT IS THE POINT. `npm ci` runs lifecycle scripts from
+# the whole dev tree — vite, vitest, eslint, prettier, happy-dom and transitives.
+# The published asset is a file the README tells users to load as a Lovelace
+# resource, so it executes on every dashboard load in their instance; whatever
+# builds it should hold the weakest credential that still works. So `checks` and
+# `build` are read-only, and `publish` — the only job with `contents: write` —
+# checks nothing out and installs nothing. It downloads an artifact and calls one
+# command.
 on:
   push:
     tags:
       - 'v*'
 
-# Creating a release means writing to the repository.
+# Read-only at workflow scope, so a job added later inherits the harmless
+# default rather than write. Only `publish` below escalates.
+#
+# Not `{}`: a called workflow's permissions are capped by its caller's, and
+# checks.yml needs `contents: read` to check out.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
+  # The same gates that run on every push to main/dev, so a tag cannot publish
+  # something the branch never proved green.
+  checks:
+    uses: ./.github/workflows/checks.yml
+
+  build:
+    needs: checks
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Keeps the job's token out of .git/config, where an `npm ci`
+          # postinstall script could read it. Nothing here pushes with git.
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
-          # The floor the README states. Kept in step with it deliberately: a
-          # release built on a newer Node than users are told to install can
-          # emit syntax the documented floor cannot parse.
           node-version: '20'
           cache: npm
 
@@ -38,50 +60,77 @@ jobs:
       # The bundle logs `RGBCCT-LIGHT-CARD v<version>` to the browser console
       # from package.json, and Home Assistant reads the integration's version
       # from manifest.json — so a tag that disagrees with either produces a
-      # build that misreports itself, and bug reports that name a version which
-      # never existed. The two files move in lockstep because one tag ships both.
-      - name: Check the tag matches package.json and manifest.json
+      # build that misreports itself, and bug reports naming a version that
+      # never existed. One tag ships both halves, so they move in lockstep.
+      #
+      # package-lock.json carries the version twice and npm rewrites both only
+      # on `npm install`. Bumping package.json alone leaves them stale, which no
+      # other check would notice.
+      - name: Check the tag matches every version file
         run: |
           tag="${GITHUB_REF_NAME#v}"
           card=$(node -p "require('./package.json').version")
           integration=$(node -p "require('./custom_components/rgbcct_wled/manifest.json').version")
+          lock_root=$(node -p "require('./package-lock.json').version")
+          lock_package=$(node -p "require('./package-lock.json').packages[''].version")
 
-          if [ "$tag" != "$card" ] || [ "$tag" != "$integration" ]; then
-            echo "::error::tag $GITHUB_REF_NAME disagrees with package.json ($card) / manifest.json ($integration)"
+          status=0
+          for pair in "package.json:$card" \
+                      "manifest.json:$integration" \
+                      "package-lock.json:$lock_root" \
+                      "package-lock.json (packages):$lock_package"; do
+            if [ "${pair#*:}" != "$tag" ]; then
+              echo "::error::tag $GITHUB_REF_NAME disagrees with ${pair%%:*} (${pair#*:})"
+              status=1
+            fi
+          done
+          exit $status
+
+      # The Home Assistant floor is stated twice for two audiences: hacs.json
+      # enforces it at install time, the README explains it to a human. Nothing
+      # but this ties them together, and a floor that rises in one place only is
+      # worse than one stated nowhere — HACS would refuse an install the docs
+      # promise works, or allow one they say it does not.
+      - name: Check the README states the Home Assistant floor from hacs.json
+        run: |
+          floor=$(node -p "require('./hacs.json').homeassistant")
+          # hacs.json needs three components; prose reads better without a
+          # trailing .0, so accept the trimmed form the README actually uses.
+          if ! grep -qF "${floor%.0}" README.md; then
+            echo "::error::hacs.json requires HA ${floor} but README.md never mentions ${floor%.0}"
             exit 1
           fi
 
-      # The HA-free Python tier needs a bare `pytest` and nothing else — that is
-      # the whole point of it, and running it with no Home Assistant installed is
-      # what verifies that color.py / models.py / payload.py stayed import-free.
-      #
-      # `npm run test:python` is not used here: it drives a persistent venv that
-      # exists to keep a dev machine's interpreter clean and to keep ~26k files
-      # off a Samba share. A runner is disposable and local, so neither reason
-      # applies, and the script exits 1 when the venv is absent.
-      #
-      # Pinned to the floor the code actually needs (`@dataclass(slots=True)`),
-      # not to the version Home Assistant wants — testing at the floor is what
-      # catches newer syntax slipping in. The HA-harness tier is deliberately
-      # absent: it needs Docker, and a release is not where you discover that.
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
       - run: npm ci
-      - run: pip install pytest
-
-      - run: npm run lint
-      - run: npm run format:check
-      - run: npm run test:js
-      - run: python -m pytest
-
       - run: npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: card-bundle
+          path: dist/rgbcct-light-card.js
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      # No checkout and no install: this job holds the only write-scoped token
+      # in the workflow, so it runs no third-party code at all.
+      - uses: actions/download-artifact@v4
+        with:
+          name: card-bundle
 
       # The asset filename must stay exactly `rgbcct-light-card.js` — HACS
       # matches a plugin's JS file against the repository name, and users paste
       # it into a Lovelace resource URL. Renaming it breaks both.
+      #
+      # --verify-tag refuses to invent a release for a ref that is not a real
+      # pushed tag, so a typo fails instead of publishing under the wrong name.
       - name: Publish the release with the card bundle
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/rgbcct-light-card.js --generate-notes
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "$GITHUB_REF_NAME" rgbcct-light-card.js --verify-tag --generate-notes
