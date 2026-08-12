@@ -3,7 +3,7 @@
 | Command                    | Covers                          | Needs             | Result                     |
 | -------------------------- | ------------------------------- | ----------------- | -------------------------- |
 | `npm run setup:python-env` | —                               | any Python ≥ 3.10 | one-time; creates the venv |
-| `npm run test:js`          | the card                        | nothing extra     | 57 passed                  |
+| `npm run test:js`          | the card                        | nothing extra     | 61 passed                  |
 | `npm run test:python`      | the integration, HA-free tier   | that venv         | 851 passed, 154 skipped    |
 | `npm run test:python:ha`   | the integration, **everything** | Docker            | 854 passed, 153 skipped    |
 | `npm run test`             | card + HA-free tier             | that venv         | the two fast ones          |
@@ -24,13 +24,13 @@ in this JavaScript with no automated coverage** — including two regressions
 introduced while fixing the first round. Every assertion below traces to a bug
 that reached hardware.
 
-| Suite                                  | Pins                                                        |
-| -------------------------------------- | ----------------------------------------------------------- |
-| `tests/card/color.test.js`             | the white/cct ↔ cold/warm encoding, including its lossiness |
-| `tests/card/wled.test.js`              | that a write carries only the channel the user edited       |
-| `tests/card/mixins/segments.test.js`   | master detection, entity validation, segment discovery      |
-| `tests/card/mixins/sync.test.js`       | adoption guards vs. redraw, and the lossy-readback rule     |
-| `tests/card/rgbcct-light-card.test.js` | the element's attach/detach lifecycle and write batching    |
+| Suite                                  | Pins                                                                                                    |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `tests/card/color.test.js`             | the white/cct ↔ cold/warm encoding, including its lossiness                                             |
+| `tests/card/wled.test.js`              | that a write carries only the channel the user edited                                                   |
+| `tests/card/mixins/segments.test.js`   | master detection, entity validation, segment discovery                                                  |
+| `tests/card/mixins/sync.test.js`       | adoption guards vs. redraw, and the lossy-readback rule                                                 |
+| `tests/card/rgbcct-light-card.test.js` | the element's attach/detach lifecycle, write batching, and the element references each layout publishes |
 
 Two things worth knowing before editing them:
 
