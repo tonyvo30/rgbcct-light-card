@@ -2,3 +2,8 @@
 dist/
 node_modules/
 package-lock.json
+
+# Prettier does not read .gitignore, so gitignored paths must be repeated here
+# or `prettier .` would walk into them. The design notes in .claude/ are prose
+# for humans, not source, and reformatting them churns them for no gain.
+.claude/
